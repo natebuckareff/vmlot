@@ -44,6 +44,13 @@ async function main() {
     return
   }
 
+  if (resource === "images" && action === "remove") {
+    const id = required(flags, "--id")
+    await api.removeImage(id)
+    console.log(`removed ${id}`)
+    return
+  }
+
   if (resource === "vms" && action === "list") {
     const vms = await api.listVms()
     for (const vm of vms) {
@@ -132,6 +139,7 @@ function usage(): string {
     "  bun src/cli.ts server start [--data-dir ./data] [--host 0.0.0.0] [--port 1234]",
     "  bun src/cli.ts images list [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts images remove --id <image-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms list [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms start --id <vm-id> [--server http://127.0.0.1:1234]",

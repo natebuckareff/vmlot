@@ -23,6 +23,8 @@ export class CreateImage {
   private error?: string
   private status: ImageStatus
   private downloadPromise?: Promise<void>
+  private readonly abortController: AbortController
+  private isCanceled: boolean
 
   constructor(
     private readonly dataDir: DataDir,
@@ -33,6 +35,8 @@ export class CreateImage {
     this.name = params.name
     this.progress = 0
     this.status = "downloading"
+    this.abortController = new AbortController()
+    this.isCanceled = false
   }
 
   async getInfo(): Promise<ImageInfo> {
@@ -61,9 +65,19 @@ export class CreateImage {
     await unlinkIfPresent(downloadPath)
 
     this.downloadPromise = this.runDownload(downloadPath).catch((error: unknown) => {
+      if (this.isCanceled) {
+        return
+      }
+
       this.error = error instanceof Error ? error.message : String(error)
       this.status = "download-fail"
     })
+  }
+
+  async cancel(): Promise<void> {
+    this.isCanceled = true
+    this.abortController.abort()
+    await this.downloadPromise
   }
 
   async complete(): Promise<LoadImage | undefined> {
@@ -79,7 +93,9 @@ export class CreateImage {
   }
 
   private async runDownload(downloadPath: string): Promise<void> {
-    const response = await fetch(this.params.url)
+    const response = await fetch(this.params.url, {
+      signal: this.abortController.signal,
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to download ${this.params.url}: ${response.status} ${response.statusText}`)

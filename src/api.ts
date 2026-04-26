@@ -11,4 +11,5 @@ export interface Api {
   stopVm(id: string): Promise<void>
   removeVm(id: string): Promise<void>
   createImage(params: CreateImageParams): Promise<ImageInfo>
+  removeImage(id: string): Promise<void>
 }

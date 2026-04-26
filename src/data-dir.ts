@@ -184,6 +184,11 @@ export class DataDir {
     await this.removeDirectoryIfPresent(this.vmDirPath(id))
   }
 
+  async removeImageDir(id: string): Promise<void> {
+    await this.setup()
+    await this.removeDirectoryIfPresent(this.imageDirPath(id))
+  }
+
   private async setup(): Promise<void> {
     if (this.isSetup) {
       return

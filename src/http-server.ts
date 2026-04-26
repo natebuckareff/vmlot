@@ -64,6 +64,19 @@ export class HttpServer {
         })
       }
 
+      if (pathname === "/api/remove-image") {
+        if (!isRemoveVmBody(body)) {
+          return jsonResponse(400, {
+            error: {
+              message: "Invalid remove-image request body",
+            },
+          })
+        }
+
+        await this.api.removeImage(body.id)
+        return jsonResponse(200, { data: null })
+      }
+
       if (pathname === "/api/remove-vm") {
         if (!isRemoveVmBody(body)) {
           return jsonResponse(400, {

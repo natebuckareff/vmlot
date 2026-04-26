@@ -64,6 +64,32 @@ export class ApiServer implements Api {
     return createImage.getInfo()
   }
 
+  async removeImage(id: string): Promise<void> {
+    await this.setup()
+
+    const image = this.images.get(id)
+    if (!image) {
+      throw new Error(`Image not found: ${id}`)
+    }
+
+    const info = await image.getInfo()
+    if (info.status === "downloading") {
+      if (!(image instanceof CreateImage)) {
+        throw new Error(`Image is marked downloading but is not an active CreateImage job: ${info.name}`)
+      }
+
+      await image.cancel()
+    }
+
+    const linkedVms = (await this.listVms()).filter((vm) => vm.baseImageId === id)
+    if (linkedVms.length > 0) {
+      throw new Error(`Cannot remove image while VMs reference it: ${linkedVms.map((vm) => vm.name).join(", ")}`)
+    }
+
+    await this.dataDir.removeImageDir(id)
+    this.images.delete(id)
+  }
+
   async createVm(params: CreateVmParams): Promise<VmInfo> {
     await this.setup()
     await this.validateCreateVm(params)

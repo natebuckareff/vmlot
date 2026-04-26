@@ -44,6 +44,10 @@ export class ApiClient implements Api {
     return this.post<ImageInfo>("/api/create-image", params)
   }
 
+  async removeImage(id: string): Promise<void> {
+    return this.post<void>("/api/remove-image", { id })
+  }
+
   private async post<T>(path: string, body: unknown): Promise<T> {
     const response = await fetch(new URL(path, normalizedBaseUrl(this.baseUrl)), {
       method: "POST",
