@@ -19,8 +19,12 @@ write_files:
     content: |
       #!/bin/bash
       set -euo pipefail
+      exec > >(tee -a /var/log/vm-setup.log) 2>&1
 
       echo "Running setup script"
+
+      echo "Starting qemu guest agent"
+      systemctl start qemu-guest-agent || true
 
       echo "Setting up tailscale"
       sh -c 'curl -fsSL https://tailscale.com/install.sh | sh'
