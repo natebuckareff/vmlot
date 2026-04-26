@@ -3,12 +3,13 @@ import { join, resolve } from "node:path"
 import { homedir } from "node:os"
 import prettyBytes from "pretty-bytes"
 import prettyMilliseconds from "pretty-ms"
-import { Api } from "./api"
+import type { Api } from "./api"
 import { ApiClient } from "./api-client"
 import { HttpServer } from "./http-server"
-import { ImageInfo } from "./image"
+import { formatCliId } from "./id"
+import type { ImageInfo } from "./image"
 import { TablePrinter } from "./table-printer"
-import { VmInfo } from "./vm"
+import type { VmInfo } from "./vm"
 
 const DEFAULT_DATA_DIR = "data"
 const DEFAULT_SERVER_URL = "http://127.0.0.1:1234"
@@ -41,7 +42,7 @@ async function main() {
     const name = required(flags, "--name")
     const url = required(flags, "--url")
     const image = await api.createImage({ name, url })
-    console.log(`${image.id} ${image.status} ${image.name}`)
+    console.log(`${formatCliId(image.id)} ${image.status} ${image.name}`)
     const progressReporter = createImageProgressReporter()
     let completedImage
 
@@ -55,14 +56,14 @@ async function main() {
     }
 
     progressReporter.update(completedImage, { done: true })
-    console.log(`${completedImage.id} ${completedImage.status} ${completedImage.name} ${completedImage.progress}`)
+    console.log(`${formatCliId(completedImage.id)} ${completedImage.status} ${completedImage.name} ${completedImage.progress}`)
     return
   }
 
   if (resource === "images" && action === "remove") {
     const id = required(flags, "--id")
     await api.removeImage(id)
-    console.log(`removed ${id}`)
+    console.log(`removed ${formatCliId(id)}`)
     return
   }
 
@@ -73,38 +74,38 @@ async function main() {
   }
 
   if (resource === "vms" && action === "create") {
-    const baseImageId = await resolveBaseImageId(api, required(flags, "--base-image"))
     const vm = await api.createVm({
       name: required(flags, "--name"),
-      baseImageId,
+      baseImageId: required(flags, "--base-image"),
       user: required(flags, "--user"),
       sshPublicKey: await resolveValue(required(flags, "--ssh-public-key")),
       memory: flags.has("--memory") ? parseIntegerFlag(flags, "--memory") : DEFAULT_VM_MEMORY,
       vcpu: flags.has("--vcpu") ? parseIntegerFlag(flags, "--vcpu") : DEFAULT_VM_VCPU,
     })
-    console.log(`${vm.id} ${vm.status} ${vm.name}`)
+    console.log(`${formatCliId(vm.id)} ${vm.status} ${vm.name}`)
     const completedVm = await waitForVm(api, vm.id)
-    console.log(`${completedVm.id} ${completedVm.status} ${completedVm.name} ${completedVm.baseImageName}`)
+    console.log(`${formatCliId(completedVm.id)} ${completedVm.status} ${completedVm.name} ${completedVm.baseImageName}`)
     return
   }
 
   if (resource === "vms" && action === "remove") {
-    await api.removeVm(required(flags, "--id"))
-    console.log(`removed ${required(flags, "--id")}`)
+    const id = required(flags, "--id")
+    await api.removeVm(id)
+    console.log(`removed ${formatCliId(id)}`)
     return
   }
 
   if (resource === "vms" && action === "start") {
     const id = required(flags, "--id")
     await api.startVm(id)
-    console.log(`started ${id}`)
+    console.log(`started ${formatCliId(id)}`)
     return
   }
 
   if (resource === "vms" && action === "stop") {
     const id = required(flags, "--id")
     await api.stopVm(id)
-    console.log(`stopped ${id}`)
+    console.log(`stopped ${formatCliId(id)}`)
     return
   }
 
@@ -116,12 +117,16 @@ function parseFlags(argv: string[]): Map<string, string> {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
+    if (arg === undefined) {
+      break
+    }
 
     if (!arg.startsWith("--")) {
       throw new Error(`Unexpected argument: ${arg}`)
     }
 
-    const [flag, inlineValue] = arg.split("=", 2)
+    const [parsedFlag, inlineValue] = arg.split("=", 2)
+    const flag = parsedFlag ?? arg
     const value = inlineValue ?? argv[index + 1]
     if (!value || value.startsWith("--")) {
       throw new Error(`Missing value for ${flag}`)
@@ -173,7 +178,7 @@ function formatImageTable(images: ImageInfo[]): string {
 
   for (const image of images) {
     const row = [
-      image.id,
+      formatCliId(image.id),
       image.name,
       image.status,
       formatCreatedAt(image.createdAt),
@@ -286,30 +291,6 @@ async function waitForVm(api: Api, id: string) {
 }
 
 
-async function resolveBaseImageId(api: Api, value: string): Promise<string> {
-  const images = await api.listImages()
-
-  const directMatch = images.find((image) => image.id === value)
-  if (directMatch) {
-    if (directMatch.status !== "ready") {
-      throw new Error(`Base image is not ready: ${directMatch.name} (${directMatch.status})`)
-    }
-    return directMatch.id
-  }
-
-  const nameMatches = images.filter((image) => image.name === value)
-  if (nameMatches.length === 0) {
-    throw new Error(`Base image not found: ${value}`)
-  }
-
-  const readyMatches = nameMatches.filter((image) => image.status === "ready")
-  if (readyMatches.length !== 1) {
-    throw new Error(`Base image name must resolve to one ready image: ${value}`)
-  }
-
-  return readyMatches[0].id
-}
-
 function parseIntegerFlag(flags: Map<string, string>, name: string): number {
   const value = Number.parseInt(required(flags, name), 10)
   if (!Number.isInteger(value)) {
@@ -325,7 +306,7 @@ function formatVmTable(vms: VmInfo[]): string {
 
   for (const vm of vms) {
     table.addRow([
-      vm.id,
+      formatCliId(vm.id),
       vm.name,
       vm.baseImageName,
       vm.status,

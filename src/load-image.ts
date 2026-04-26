@@ -1,14 +1,15 @@
 import { stat } from "node:fs/promises"
 import { CreateImage } from "./create-image"
 import { DataDir } from "./data-dir"
-import { ImageInfo, ImageMetadata } from "./image"
+import type { Id } from "./id"
+import type { ImageInfo, ImageMetadata } from "./image"
 
 export class LoadImage {
   private metadata?: ImageMetadata
 
   constructor(
     private readonly dataDir: DataDir,
-    public readonly id: string,
+    public readonly id: Id,
   ) {}
 
   async getInfo(): Promise<ImageInfo> {

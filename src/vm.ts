@@ -1,9 +1,11 @@
+import type { Id } from "./id"
+
 export interface VmInfo {
-  id: string
+  id: Id
   name: string
   status: VmStatus
   createdAt?: number
-  baseImageId: string
+  baseImageId?: Id
   baseImageName: string
   memory: number
   vcpu: number
@@ -14,7 +16,7 @@ export interface VmInfo {
 export interface VmRequest {
   name: string
   createdAt?: number
-  baseImageId: string
+  baseImageId: Id
   user: string
   sshPublicKey: string
   tailscaleAuthKey: string
@@ -23,10 +25,10 @@ export interface VmRequest {
 }
 
 export interface VmMetadata {
-  id: string
+  id: Id
   name: string
   createdAt?: number
-  baseImageId: string
+  baseImageId: Id
   baseImageName: string
   memory: number
   vcpu: number
@@ -37,7 +39,7 @@ export interface VmMetadata {
 export interface CreateVmParams {
   name: string
   createdAt?: number
-  baseImageId: string
+  baseImageId: Id
   user: string
   sshPublicKey: string
   tailscaleAuthKey: string

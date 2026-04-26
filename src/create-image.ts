@@ -1,9 +1,9 @@
-import { createHash, randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
 import { open } from "node:fs/promises"
-import { join } from "node:path"
 import { DataDir } from "./data-dir"
 import { unlinkIfPresent } from "./fs"
-import { ImageInfo, ImageStatus } from "./image"
+import { generateId, type Id } from "./id"
+import type { ImageInfo, ImageStatus } from "./image"
 import { LoadImage } from "./load-image"
 
 export interface CreateImageParams {
@@ -13,11 +13,11 @@ export interface CreateImageParams {
 }
 
 interface CreateImageOptions {
-  id?: string
+  id?: Id
 }
 
 export class CreateImage {
-  private readonly id: string
+  private readonly id: Id
   private readonly name: string
   private readonly createdAt: number
   private downloadedBytes: number
@@ -34,7 +34,7 @@ export class CreateImage {
     public readonly params: CreateImageParams,
     options: CreateImageOptions = {},
   ) {
-    this.id = options.id ?? randomUUID()
+    this.id = options.id ?? generateId()
     this.name = params.name
     this.createdAt = params.createdAt ?? Date.now()
     this.downloadedBytes = 0

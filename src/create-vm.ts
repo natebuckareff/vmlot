@@ -1,15 +1,15 @@
-import { randomUUID } from "node:crypto"
 import { readFile, writeFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import { DataDir } from "./data-dir"
+import { generateId, type Id } from "./id"
 import { LibvirtClient } from "./libvirt-client"
 import { TailscaleClient } from "./tailscale-client"
 import { runCommand } from "./util"
-import { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
+import type { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
 import { LoadVm } from "./load-vm"
 
 interface CreateVmOptions {
-  id?: string
+  id?: Id
   templateDir?: string
   tailscale: TailscaleClient
 }
@@ -17,7 +17,7 @@ interface CreateVmOptions {
 const LIBVIRT_NETWORK_NAME = "clawnet"
 
 export class CreateVm {
-  private readonly id: string
+  private readonly id: Id
   private readonly createdAt: number
   private status: VmStatus
   private error?: string
@@ -31,7 +31,7 @@ export class CreateVm {
     public readonly params: CreateVmParams,
     options: CreateVmOptions,
   ) {
-    this.id = options.id ?? randomUUID()
+    this.id = options.id ?? generateId()
     this.createdAt = params.createdAt ?? Date.now()
     this.status = "creating"
     this.templateDir = options.templateDir ?? resolve(import.meta.dir, "..", "templates")

@@ -1,8 +1,11 @@
 import { CreateVm } from "./create-vm"
 import { DataDir } from "./data-dir"
-import { GuestInterfaceInfo, LibvirtClient } from "./libvirt-client"
-import { TailscaleClient, TailscaleDevice } from "./tailscale-client"
-import { VmInfo, VmMetadata, VmRequest } from "./vm"
+import type { Id } from "./id"
+import { LibvirtClient } from "./libvirt-client"
+import type { GuestInterfaceInfo } from "./libvirt-client"
+import { TailscaleClient } from "./tailscale-client"
+import type { TailscaleDevice } from "./tailscale-client"
+import type { VmInfo, VmMetadata, VmRequest } from "./vm"
 
 interface LoadVmOptions {
   tailscale: TailscaleClient
@@ -15,7 +18,7 @@ export class LoadVm {
 
   constructor(
     private readonly dataDir: DataDir,
-    public readonly id: string,
+    public readonly id: Id,
     options: LoadVmOptions,
   ) {
     this.libvirt = new LibvirtClient()
@@ -76,7 +79,6 @@ export class LoadVm {
       name: this.id,
       status: "create-fail",
       createdAt: undefined,
-      baseImageId: "",
       baseImageName: "",
       memory: 0,
       vcpu: 0,

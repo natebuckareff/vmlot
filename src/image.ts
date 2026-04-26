@@ -1,3 +1,5 @@
+import type { Id } from "./id"
+
 export interface ImageRequest {
   name: string,
   url: string,
@@ -5,7 +7,7 @@ export interface ImageRequest {
 }
 
 export interface ImageInfo {
-  id: string,         // uuid
+  id: Id,             // 32 random bytes, hex encoded
   name: string,       // user-provided name
   url: string,        // original url
   status: ImageStatus
@@ -18,7 +20,7 @@ export interface ImageInfo {
 
 // only created _after_ download finishes
 export interface ImageMetadata {
-  id: string,
+  id: Id,
   name: string,
   url: string,
   createdAt?: number,

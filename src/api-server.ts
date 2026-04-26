@@ -1,12 +1,14 @@
-import { Api } from "./api"
-import { CreateImage, CreateImageParams } from "./create-image"
+import type { Api } from "./api"
+import { CreateImage, type CreateImageParams } from "./create-image"
 import { CreateVm } from "./create-vm"
 import { DataDir } from "./data-dir"
-import { ImageInfo } from "./image"
+import type { Id } from "./id"
+import { IdMap } from "./id-map"
+import type { ImageInfo } from "./image"
 import { LoadImage } from "./load-image"
 import { LoadVm } from "./load-vm"
 import { TailscaleClient } from "./tailscale-client"
-import { CreateVmInput, CreateVmParams, VmInfo } from "./vm"
+import type { CreateVmInput, CreateVmParams, VmInfo } from "./vm"
 
 interface ApiServerOptions {
   dataDir: DataDir
@@ -17,15 +19,15 @@ export class ApiServer implements Api {
   private isSetup: boolean
   private readonly dataDir: DataDir
   private readonly tailscale: TailscaleClient
-  private readonly vms: Map<string, CreateVm | LoadVm>
-  private readonly images: Map<string, CreateImage | LoadImage>
+  private readonly vms: IdMap<CreateVm | LoadVm>
+  private readonly images: IdMap<CreateImage | LoadImage>
 
   constructor(options: ApiServerOptions) {
     this.isSetup = false
     this.dataDir = options.dataDir
     this.tailscale = options.tailscale
-    this.vms = new Map()
-    this.images = new Map()
+    this.vms = new IdMap("VM")
+    this.images = new IdMap("Image")
   }
 
   async listVms(): Promise<VmInfo[]> {
@@ -74,11 +76,8 @@ export class ApiServer implements Api {
 
   async removeImage(id: string): Promise<void> {
     await this.setup()
-
-    const image = this.images.get(id)
-    if (!image) {
-      throw new Error(`Image not found: ${id}`)
-    }
+    const resolvedId = this.images.resolve(id)
+    const image = this.requireImage(resolvedId)
 
     const info = await image.getInfo()
     if (info.status === "downloading") {
@@ -89,19 +88,20 @@ export class ApiServer implements Api {
       await image.cancel()
     }
 
-    const linkedVms = (await this.listVms()).filter((vm) => vm.baseImageId === id)
+    const linkedVms = (await this.listVms()).filter((vm) => vm.baseImageId === resolvedId)
     if (linkedVms.length > 0) {
       throw new Error(`Cannot remove image while VMs reference it: ${linkedVms.map((vm) => vm.name).join(", ")}`)
     }
 
-    await this.dataDir.removeImageDir(id)
+    await this.dataDir.removeImageDir(resolvedId)
     this.images.delete(id)
   }
 
   async createVm(input: CreateVmInput): Promise<VmInfo> {
     await this.setup()
-    await this.validateCreateVmInput(input)
-    const params = await this.resolveCreateVmParams(input)
+    const normalizedInput = await this.normalizeCreateVmInput(input)
+    const params = await this.resolveCreateVmParams(normalizedInput)
+    await this.validateCreateVmParams(params)
 
     const createVm = new CreateVm(this.dataDir, params, { tailscale: this.tailscale })
     const info = await createVm.getInfo()
@@ -111,21 +111,21 @@ export class ApiServer implements Api {
   }
 
   async startVm(id: string): Promise<void> {
-    const loadVm = await this.requireLoadedVm(id)
+    const loadVm = await this.requireLoadedVm(this.vms.resolve(id))
     await loadVm.start()
   }
 
   async stopVm(id: string): Promise<void> {
-    const loadVm = await this.requireLoadedVm(id)
+    const loadVm = await this.requireLoadedVm(this.vms.resolve(id))
     await loadVm.stop()
   }
 
   async removeVm(id: string): Promise<void> {
     await this.setup()
-
-    const loadVm = await this.requireLoadedVm(id)
+    const resolvedId = this.vms.resolve(id)
+    const loadVm = await this.requireLoadedVm(resolvedId)
     await loadVm.remove()
-    this.vms.delete(id)
+    this.vms.delete(resolvedId)
   }
 
   private async setup(): Promise<void> {
@@ -173,18 +173,19 @@ export class ApiServer implements Api {
     if (existingVm) {
       throw new Error(`VM name already exists: ${input.name}`)
     }
+  }
 
-    const baseImage = (await this.listImages()).find((image) => image.id === input.baseImageId)
-    if (!baseImage) {
-      throw new Error(`Base image not found: ${input.baseImageId}`)
-    }
+  private async normalizeCreateVmInput(input: CreateVmInput): Promise<CreateVmInput & { baseImageId: Id }> {
+    await this.validateCreateVmInput(input)
+    const baseImage = await this.resolveBaseImage(input.baseImageId)
 
-    if (baseImage.status !== "ready") {
-      throw new Error(`Base image is not ready: ${baseImage.name} (${baseImage.status})`)
+    return {
+      ...input,
+      baseImageId: baseImage.id,
     }
   }
 
-  private async resolveCreateVmParams(input: CreateVmInput): Promise<CreateVmParams> {
+  private async resolveCreateVmParams(input: CreateVmInput & { baseImageId: Id }): Promise<CreateVmParams> {
     const authKey = await this.tailscale.createAuthKey(`clawthing VM ${input.name}`)
 
     return {
@@ -198,9 +199,17 @@ export class ApiServer implements Api {
     }
   }
 
-  private async requireLoadedVm(id: string): Promise<LoadVm> {
-    await this.setup()
+  private async validateCreateVmParams(params: CreateVmParams): Promise<void> {
+    const baseImage = this.requireImage(params.baseImageId)
+    const info = await baseImage.getInfo()
 
+    if (info.status !== "ready") {
+      throw new Error(`Base image is not ready: ${info.name} (${info.status})`)
+    }
+  }
+
+  private async requireLoadedVm(id: Id): Promise<LoadVm> {
+    await this.setup()
     const vm = this.vms.get(id)
     if (!vm) {
       throw new Error(`VM not found: ${id}`)
@@ -214,5 +223,48 @@ export class ApiServer implements Api {
     const loadVm = new LoadVm(this.dataDir, id, { tailscale: this.tailscale })
     this.vms.set(id, loadVm)
     return loadVm
+  }
+
+  private requireImage(id: Id): CreateImage | LoadImage {
+    const image = this.images.get(id)
+    if (!image) {
+      throw new Error(`Image not found: ${id}`)
+    }
+
+    return image
+  }
+
+  private async resolveBaseImage(value: string): Promise<ImageInfo> {
+    const images = await this.listImages()
+
+    const nameMatches = images.filter((image) => image.name === value)
+    if (nameMatches.length === 1) {
+      const [match] = nameMatches
+      if (!match) {
+        throw new Error(`Base image not found: ${value}`)
+      }
+      return match
+    }
+
+    if (nameMatches.length > 1) {
+      const readyMatches = nameMatches.filter((image) => image.status === "ready")
+      if (readyMatches.length === 1) {
+        const [match] = readyMatches
+        if (!match) {
+          throw new Error(`Base image not found: ${value}`)
+        }
+        return match
+      }
+
+      throw new Error(`Base image name must resolve to one ready image: ${value}`)
+    }
+
+    const resolvedId = this.images.resolve(value)
+    const match = images.find((image) => image.id === resolvedId)
+    if (!match) {
+      throw new Error(`Base image not found: ${value}`)
+    }
+
+    return match
   }
 }
