@@ -9,6 +9,7 @@ import { LoadImage } from "./load-image"
 export interface CreateImageParams {
   name: string
   url: string
+  createdAt?: number
 }
 
 interface CreateImageOptions {
@@ -18,6 +19,7 @@ interface CreateImageOptions {
 export class CreateImage {
   private readonly id: string
   private readonly name: string
+  private readonly createdAt: number
   private downloadedBytes: number
   private progress: number
   private hash?: string
@@ -34,6 +36,7 @@ export class CreateImage {
   ) {
     this.id = options.id ?? randomUUID()
     this.name = params.name
+    this.createdAt = params.createdAt ?? Date.now()
     this.downloadedBytes = 0
     this.progress = 0
     this.status = "downloading"
@@ -47,6 +50,7 @@ export class CreateImage {
       name: this.name,
       url: this.params.url,
       status: this.status,
+      createdAt: this.createdAt,
       hash: this.hash,
       sizeBytes: this.downloadedBytes,
       progress: this.progress,
@@ -62,6 +66,7 @@ export class CreateImage {
     await this.dataDir.writeImageRequest(this.id, {
       name: this.params.name,
       url: this.params.url,
+      createdAt: this.createdAt,
     })
 
     const downloadPath = await this.dataDir.getImageDownloadPath(this.id)
@@ -148,6 +153,7 @@ export class CreateImage {
       id: this.id,
       name: this.name,
       url: this.params.url,
+      createdAt: this.createdAt,
       hash: this.hash,
     })
     await this.dataDir.removeImageRequest(this.id)

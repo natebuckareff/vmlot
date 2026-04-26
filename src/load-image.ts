@@ -20,6 +20,7 @@ export class LoadImage {
         name: metadata.name,
         url: metadata.url,
         status: "ready",
+        createdAt: metadata.createdAt,
         hash: metadata.hash,
         sizeBytes: await this.getFileSize(await this.dataDir.getImagePath(this.id)),
         progress: 1,
@@ -35,6 +36,7 @@ export class LoadImage {
         name: request?.name ?? this.id,
         url: request?.url ?? "",
         status: "download-interrupted",
+        createdAt: request?.createdAt,
         sizeBytes: await this.getFileSize(await this.dataDir.getImageDownloadPath(this.id)),
         progress: 0,
         error: request ? undefined : "Interrupted download is missing request.json",
@@ -46,6 +48,7 @@ export class LoadImage {
       name: request?.name ?? this.id,
       url: request?.url ?? "",
       status: "download-fail",
+      createdAt: request?.createdAt,
       progress: 0,
       error: "Image directory is incomplete",
     }

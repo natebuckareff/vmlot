@@ -18,6 +18,7 @@ const LIBVIRT_NETWORK_NAME = "clawnet"
 
 export class CreateVm {
   private readonly id: string
+  private readonly createdAt: number
   private status: VmStatus
   private error?: string
   private createPromise?: Promise<void>
@@ -31,6 +32,7 @@ export class CreateVm {
     options: CreateVmOptions,
   ) {
     this.id = options.id ?? randomUUID()
+    this.createdAt = params.createdAt ?? Date.now()
     this.status = "creating"
     this.templateDir = options.templateDir ?? resolve(import.meta.dir, "..", "templates")
     this.libvirt = new LibvirtClient()
@@ -44,6 +46,7 @@ export class CreateVm {
       id: this.id,
       name: this.params.name,
       status: this.status,
+      createdAt: this.createdAt,
       baseImageId: this.params.baseImageId,
       baseImageName: baseImageMetadata?.name ?? this.params.baseImageId,
       memory: this.params.memory,
@@ -123,6 +126,7 @@ export class CreateVm {
     const metadata: VmMetadata = {
       id: this.id,
       name: this.params.name,
+      createdAt: this.createdAt,
       baseImageId: this.params.baseImageId,
       baseImageName: baseImageMetadata.name,
       memory: this.params.memory,
@@ -207,6 +211,7 @@ export class CreateVm {
   private toRequest(): VmRequest {
     return {
       name: this.params.name,
+      createdAt: this.createdAt,
       baseImageId: this.params.baseImageId,
       user: this.params.user,
       sshPublicKey: this.params.sshPublicKey,

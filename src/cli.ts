@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { homedir } from "node:os"
+import prettyMilliseconds from "pretty-ms"
 import { Api } from "./api"
 import { ApiClient } from "./api-client"
 import { HttpServer } from "./http-server"
@@ -165,8 +166,8 @@ function createApi(flags: Map<string, string>): Api {
 function formatImageTable(images: ImageInfo[]): string {
   const includeProgress = images.some((image) => image.status === "downloading")
   const headers = includeProgress
-    ? ["ID", "NAME", "STATUS", "SIZE", "PROGRESS", "SOURCE"]
-    : ["ID", "NAME", "STATUS", "SIZE", "SOURCE"]
+    ? ["ID", "NAME", "STATUS", "CREATED", "SIZE", "PROGRESS", "SOURCE"]
+    : ["ID", "NAME", "STATUS", "CREATED", "SIZE", "SOURCE"]
   const table = new TablePrinter(headers, { columnSpacing: 3 })
 
   for (const image of images) {
@@ -174,6 +175,7 @@ function formatImageTable(images: ImageInfo[]): string {
       image.id,
       image.name,
       image.status,
+      formatCreatedAt(image.createdAt),
       formatImageSize(image.sizeBytes),
     ]
 
@@ -316,7 +318,7 @@ function parseIntegerFlag(flags: Map<string, string>, name: string): number {
 }
 
 function formatVmTable(vms: VmInfo[]): string {
-  const table = new TablePrinter(["ID", "NAME", "IMAGE", "STATUS", "VCPU", "MEMORY", "ADDRESS"], {
+  const table = new TablePrinter(["ID", "NAME", "IMAGE", "STATUS", "CREATED", "VCPU", "MEMORY", "ADDRESS"], {
     columnSpacing: 3,
   })
 
@@ -326,6 +328,7 @@ function formatVmTable(vms: VmInfo[]): string {
       vm.name,
       vm.baseImageName,
       vm.status,
+      formatCreatedAt(vm.createdAt),
       vm.vcpu,
       formatVmMemory(vm.memory),
       vm.address ?? "-",
@@ -353,6 +356,14 @@ function formatImageProgress(image: ImageInfo): string {
   }
 
   return `${Math.round(image.progress * 100)}%`
+}
+
+function formatCreatedAt(createdAt: number | undefined): string {
+  if (createdAt === undefined) {
+    return "-"
+  }
+
+  return `${prettyMilliseconds(Math.max(0, Date.now() - createdAt), { compact: true })} ago`
 }
 
 function sourceFileName(url: string): string {

@@ -2,6 +2,7 @@ export interface VmInfo {
   id: string
   name: string
   status: VmStatus
+  createdAt?: number
   baseImageId: string
   baseImageName: string
   memory: number
@@ -12,6 +13,7 @@ export interface VmInfo {
 
 export interface VmRequest {
   name: string
+  createdAt?: number
   baseImageId: string
   user: string
   sshPublicKey: string
@@ -23,6 +25,7 @@ export interface VmRequest {
 export interface VmMetadata {
   id: string
   name: string
+  createdAt?: number
   baseImageId: string
   baseImageName: string
   memory: number
@@ -33,6 +36,7 @@ export interface VmMetadata {
 
 export interface CreateVmParams {
   name: string
+  createdAt?: number
   baseImageId: string
   user: string
   sshPublicKey: string

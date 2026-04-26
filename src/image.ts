@@ -1,6 +1,7 @@
 export interface ImageRequest {
   name: string,
   url: string,
+  createdAt?: number,
 }
 
 export interface ImageInfo {
@@ -8,6 +9,7 @@ export interface ImageInfo {
   name: string,       // user-provided name
   url: string,        // original url
   status: ImageStatus
+  createdAt?: number  // unix timestamp in milliseconds
   hash?: string,      // hex-encoded sha256 hash, available after download
   sizeBytes?: number
   progress: number,   // download progress
@@ -19,6 +21,7 @@ export interface ImageMetadata {
   id: string,
   name: string,
   url: string,
+  createdAt?: number,
   hash: string,
 }
 
