@@ -1,26 +1,60 @@
-import { Api } from './api'
-import { VmInfo } from './vm'
-import { ImageInfo } from './image'
-import { CreateImageParams, CreateImage } from './create-image'
+import { Api } from "./api"
+import { CreateImageParams } from "./create-image"
+import { ImageInfo } from "./image"
+import { VmInfo } from "./vm"
+
+interface ApiSuccess<T> {
+  data: T
+}
+
+interface ApiFailure {
+  error: {
+    message: string
+  }
+}
 
 export class ApiClient implements Api {
+  constructor(private readonly baseUrl: string) {}
+
   async listVms(): Promise<VmInfo[]> {
-    // POST /api/list-vms
-    // -> { data: VmInfo[] }
-    // sorted by name
-    throw Error('todo')
+    return this.post<VmInfo[]>("/api/list-vms", {})
   }
 
   async listImages(): Promise<ImageInfo[]> {
-    // POST /api/list-vms
-    // -> { data: ImageInfo[] }
-    // sorted by name
-    throw Error('todo')
+    return this.post<ImageInfo[]>("/api/list-images", {})
   }
 
   async createImage(params: CreateImageParams): Promise<ImageInfo> {
-    // POST /api/create-image body=CreateImageParams
-    // -> { data: ImageInfo }
-    throw Error('todo')
+    return this.post<ImageInfo>("/api/create-image", params)
   }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(new URL(path, normalizedBaseUrl(this.baseUrl)), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    const payload = (await response.json()) as ApiSuccess<T> | ApiFailure
+
+    if (!response.ok) {
+      if ("error" in payload) {
+        throw new Error(payload.error.message)
+      }
+
+      throw new Error(`HTTP ${response.status} ${response.statusText}`)
+    }
+
+    if (!("data" in payload)) {
+      throw new Error("API response did not include data")
+    }
+
+    return payload.data
+  }
+}
+
+function normalizedBaseUrl(baseUrl: string): string {
+  return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
 }

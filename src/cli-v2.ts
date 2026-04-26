@@ -1,17 +1,30 @@
 import { resolve } from "node:path"
-import { ApiServer } from "./api-server"
+import { Api } from "./api"
+import { ApiClient } from "./api-client"
+import { HttpServer } from "./http-server"
 
 const DEFAULT_DATA_DIR = "data"
+const DEFAULT_SERVER_URL = "http://127.0.0.1:1234"
 
 async function main() {
   const [resource, action, ...rest] = Bun.argv.slice(2)
+  const flags = parseFlags(rest)
+
+  if (resource === "server" && action === "start") {
+    const server = new HttpServer({
+      dataDir: resolve(flags.get("--data-dir") ?? DEFAULT_DATA_DIR),
+      hostname: flags.get("--host"),
+      port: flags.has("--port") ? Number.parseInt(required(flags, "--port"), 10) : undefined,
+    })
+    await server.listen()
+    return
+  }
 
   if (resource !== "images") {
     throw new Error(usage())
   }
 
-  const flags = parseFlags(rest)
-  const api = new ApiServer(resolve(flags.get("--data-dir") ?? DEFAULT_DATA_DIR))
+  const api = createApi(flags)
 
   if (action === "list") {
     const images = await api.listImages()
@@ -71,12 +84,17 @@ function required(flags: Map<string, string>, name: string): string {
 function usage(): string {
   return [
     "Usage:",
-    "  bun src/cli-v2.ts images list [--data-dir ./data]",
-    "  bun src/cli-v2.ts images create --name debian-13 --url https://... [--data-dir ./data]",
+    "  bun src/cli-v2.ts server start [--data-dir ./data] [--host 0.0.0.0] [--port 1234]",
+    "  bun src/cli-v2.ts images list [--server http://127.0.0.1:1234]",
+    "  bun src/cli-v2.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
   ].join("\n")
 }
 
-async function waitForImage(api: ApiServer, id: string) {
+function createApi(flags: Map<string, string>): Api {
+  return new ApiClient(flags.get("--server") ?? DEFAULT_SERVER_URL)
+}
+
+async function waitForImage(api: Api, id: string) {
   while (true) {
     const image = (await api.listImages()).find((candidate) => candidate.id === id)
     if (!image) {
