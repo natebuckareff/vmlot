@@ -1,6 +1,8 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { join, relative } from "node:path"
 import { ImageDownload } from "./download"
+import { assertFileExists, removeDirectoryIfPresent } from "./fs"
+import { runCommand } from "./util"
 
 export interface VmBuildOptions {
   instance: string
@@ -144,19 +146,6 @@ function renderTemplate(template: string, replacements: Record<string, string>):
   })
 }
 
-async function assertFileExists(path: string): Promise<void> {
-  try {
-    await stat(path)
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
-    if (code === "ENOENT") {
-      throw new Error(`Required file not found: ${path}`)
-    }
-
-    throw error
-  }
-}
-
 async function assertPathDoesNotExist(path: string, message: string): Promise<void> {
   try {
     await stat(path)
@@ -170,38 +159,4 @@ async function assertPathDoesNotExist(path: string, message: string): Promise<vo
   }
 
   throw new Error(message)
-}
-
-function runCommand(
-  command: string[],
-  options: {
-    cwd?: string
-    errorPrefix?: string
-  } = {},
-) {
-  const result = Bun.spawnSync(command, {
-    cwd: options.cwd,
-    stderr: "pipe",
-    stdout: "pipe",
-  })
-
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString().trim()
-    const stdout = result.stdout.toString().trim()
-    throw new Error(
-      [
-        options.errorPrefix ?? `Command failed: ${command.join(" ")}`,
-        stdout && `stdout:\n${stdout}`,
-        stderr && `stderr:\n${stderr}`,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    )
-  }
-
-  return result
-}
-
-async function removeDirectoryIfPresent(path: string): Promise<void> {
-  await rm(path, { recursive: true, force: true })
 }

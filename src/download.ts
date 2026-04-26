@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
-import { open, rename, unlink } from "node:fs/promises"
+import { open, rename } from "node:fs/promises"
 import { basename, extname, join } from "node:path"
+import { unlinkIfPresent } from "./fs"
 
 export class ImageDownload {
   private readonly parsedUrl: URL
@@ -131,17 +132,4 @@ function formatBytes(bytes: number): string {
 
   const digits = unitIndex === 0 ? 0 : value >= 10 ? 1 : 2
   return `${value.toFixed(digits)} ${units[unitIndex]}`
-}
-
-async function unlinkIfPresent(path: string): Promise<void> {
-  try {
-    await unlink(path)
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
-    if (code === "ENOENT") {
-      return
-    }
-
-    throw error
-  }
 }

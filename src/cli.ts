@@ -3,6 +3,8 @@ import { basename, join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { getVmArtifactPaths, type VmArtifactPaths, VmBuild } from "./build"
 import { VmHostApiClient, type DeployArtifacts } from "./client"
+import { assertFileExists } from "./fs"
+import { runCommand } from "./util"
 
 const DEFAULT_OUTPUT_DIR = "build"
 const DEFAULT_TEMPLATE_DIR = "templates"
@@ -233,19 +235,6 @@ function resolvePath(value: string) {
   return resolve(value)
 }
 
-async function assertFileExists(path: string) {
-  try {
-    await stat(path)
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
-    if (code === "ENOENT") {
-      throw new Error(`Required file not found: ${path}`)
-    }
-
-    throw error
-  }
-}
-
 function looksLikeFilePath(value: string) {
   return value.startsWith("/") || value.startsWith("./") || value.startsWith("../") || value.startsWith("~")
 }
@@ -306,37 +295,6 @@ function normalizeRemoteRoot(value: string) {
   }
 
   return trimmed === "/" ? "/" : trimmed.replace(/\/+$/, "")
-}
-
-function runCommand(
-  command: string[],
-  options: {
-    cwd?: string
-    allowFailure?: boolean
-    errorPrefix?: string
-  } = {},
-) {
-  const result = Bun.spawnSync(command, {
-    cwd: options.cwd,
-    stderr: "pipe",
-    stdout: "pipe",
-  })
-
-  if (result.exitCode !== 0 && !options.allowFailure) {
-    const stderr = result.stderr.toString().trim()
-    const stdout = result.stdout.toString().trim()
-    throw new Error(
-      [
-        options.errorPrefix ?? `Command failed: ${command.join(" ")}`,
-        stdout && `stdout:\n${stdout}`,
-        stderr && `stderr:\n${stderr}`,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    )
-  }
-
-  return result
 }
 
 await main().catch((error: unknown) => {
