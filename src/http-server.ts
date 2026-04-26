@@ -64,6 +64,19 @@ export class HttpServer {
         })
       }
 
+      if (pathname === "/api/remove-vm") {
+        if (!isRemoveVmBody(body)) {
+          return jsonResponse(400, {
+            error: {
+              message: "Invalid remove-vm request body",
+            },
+          })
+        }
+
+        await this.api.removeVm(body.id)
+        return jsonResponse(200, { data: undefined })
+      }
+
       if (pathname === "/api/create-image") {
         if (!isCreateImageBody(body)) {
           return jsonResponse(400, {
@@ -141,6 +154,15 @@ function isCreateVmBody(
     typeof body.memory === "number" &&
     "vcpu" in body &&
     typeof body.vcpu === "number"
+  )
+}
+
+function isRemoveVmBody(body: unknown): body is { id: string } {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "id" in body &&
+    typeof body.id === "string"
   )
 }
 

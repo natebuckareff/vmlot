@@ -7,5 +7,6 @@ export interface Api {
   listVms(): Promise<VmInfo[]>
   listImages(): Promise<ImageInfo[]>
   createVm(params: CreateVmParams): Promise<VmInfo>
+  removeVm(id: string): Promise<void>
   createImage(params: CreateImageParams): Promise<ImageInfo>
 }

@@ -1,5 +1,5 @@
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises"
+import { join, relative, resolve } from "node:path"
 import { ImageMetadata, ImageRequest } from "./image"
 import { VmMetadata, VmRequest } from "./vm"
 
@@ -179,6 +179,11 @@ export class DataDir {
     return this.vmNetworkConfigPath(id)
   }
 
+  async removeVmDir(id: string): Promise<void> {
+    await this.setup()
+    await this.removeDirectoryIfPresent(this.vmDirPath(id))
+  }
+
   private async setup(): Promise<void> {
     if (this.isSetup) {
       return
@@ -251,6 +256,33 @@ export class DataDir {
 
   private vmNetworkConfigPath(id: string): string {
     return join(this.vmDirPath(id), "network-config")
+  }
+
+  private async removeDirectoryIfPresent(path: string): Promise<void> {
+    const basePath = resolve(this.path)
+    const targetPath = resolve(path)
+    const relativePath = relative(basePath, targetPath)
+
+    if (
+      relativePath.length === 0 ||
+      relativePath === "." ||
+      relativePath.startsWith("..") ||
+      relativePath.includes("\\")
+    ) {
+      throw new Error(`Refusing to remove directory outside data dir: ${targetPath}`)
+    }
+
+    try {
+      await stat(targetPath)
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+      if (code === "ENOENT") {
+        return
+      }
+      throw error
+    }
+
+    await rm(targetPath, { force: true })
   }
 
   private async readJsonFile<T>(path: string): Promise<T | undefined> {

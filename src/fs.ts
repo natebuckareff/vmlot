@@ -14,7 +14,7 @@ export async function assertFileExists(path: string): Promise<void> {
 }
 
 export async function removeDirectoryIfPresent(path: string): Promise<void> {
-  await rm(path, { recursive: true, force: true })
+  await rm(path, { force: true })
 }
 
 export async function unlinkIfPresent(path: string): Promise<void> {

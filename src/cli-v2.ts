@@ -69,6 +69,12 @@ async function main() {
     return
   }
 
+  if (resource === "vms" && action === "remove") {
+    await api.removeVm(required(flags, "--id"))
+    console.log(`removed ${required(flags, "--id")}`)
+    return
+  }
+
   throw new Error(usage())
 }
 
@@ -114,6 +120,7 @@ function usage(): string {
     "  bun src/cli-v2.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
     "  bun src/cli-v2.ts vms list [--server http://127.0.0.1:1234]",
     "  bun src/cli-v2.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
+    "  bun src/cli-v2.ts vms remove --id <vm-id> [--server http://127.0.0.1:1234]",
   ].join("\n")
 }
 

@@ -86,6 +86,25 @@ export class LoadVm {
     return createVm
   }
 
+  async remove(): Promise<void> {
+    const metadata = await this.getMetadata()
+    const request = metadata ? undefined : await this.getRequest()
+    const domainName = metadata?.name ?? request?.name
+
+    if (domainName) {
+      const domainState = this.libvirt.getState(domainName)
+      if (domainState) {
+        if (domainState.vmStatus === "running") {
+          this.libvirt.destroy(domainName)
+        }
+
+        this.libvirt.undefine(domainName)
+      }
+    }
+
+    await this.dataDir.removeVmDir(this.id)
+  }
+
   private async getMetadata(): Promise<VmMetadata | undefined> {
     if (this.metadata) {
       return this.metadata

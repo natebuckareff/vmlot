@@ -28,6 +28,10 @@ export class ApiClient implements Api {
     return this.post<VmInfo>("/api/create-vm", params)
   }
 
+  async removeVm(id: string): Promise<void> {
+    return this.post<void>("/api/remove-vm", { id })
+  }
+
   async createImage(params: CreateImageParams): Promise<ImageInfo> {
     return this.post<ImageInfo>("/api/create-image", params)
   }

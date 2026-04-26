@@ -75,6 +75,24 @@ export class ApiServer implements Api {
     return createVm.getInfo()
   }
 
+  async removeVm(id: string): Promise<void> {
+    await this.setup()
+
+    const vm = this.vms.get(id)
+    if (!vm) {
+      throw new Error(`VM not found: ${id}`)
+    }
+
+    const info = await vm.getInfo()
+    if (info.status === "creating") {
+      throw new Error(`Cannot remove VM while creation is in progress: ${info.name}`)
+    }
+
+    const loadVm = new LoadVm(this.dataDir, id)
+    await loadVm.remove()
+    this.vms.delete(id)
+  }
+
   private async setup(): Promise<void> {
     if (this.isSetup) {
       return

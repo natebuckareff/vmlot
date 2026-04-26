@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto"
 import { readFile, writeFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import { DataDir } from "./data-dir"
-import { removeDirectoryIfPresent } from "./fs"
 import { LibvirtClient } from "./libvirt-client"
 import { runCommand } from "./util"
 import { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
@@ -54,8 +53,7 @@ export class CreateVm {
       return
     }
 
-    const vmDir = await this.dataDir.getVmDirPath(this.id)
-    await removeDirectoryIfPresent(vmDir)
+    await this.dataDir.removeVmDir(this.id)
     await this.dataDir.writeVmRequest(this.id, this.toRequest())
 
     this.createPromise = this.runCreate().catch((error: unknown) => {
