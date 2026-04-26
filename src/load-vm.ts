@@ -204,15 +204,10 @@ export class LoadVm {
       return undefined
     }
 
-    const tailscaleAddress = await this.getTailscaleAddress(metadata)
-    if (tailscaleAddress) {
-      return tailscaleAddress
-    }
-
-    return this.getGuestAddress(metadata.name)
+    return this.getTailscaleAddress(metadata, metadata.name)
   }
 
-  private async getTailscaleAddress(metadata: VmMetadata): Promise<string | undefined> {
+  private async getTailscaleAddress(metadata: VmMetadata, domainName: string): Promise<string | undefined> {
     try {
       let device: TailscaleDevice | undefined
 
@@ -234,16 +229,21 @@ export class LoadVm {
         this.metadata = metadata
       }
 
-      return firstIpv4(device.addresses)
+      const apiAddress = firstIpv4(device.addresses)
+      if (apiAddress) {
+        return apiAddress
+      }
     } catch {
-      return undefined
+      // Fall through to guest agent inspection of tailscale0 only.
     }
+
+    return this.getGuestTailscaleAddress(domainName)
   }
 
-  private getGuestAddress(domainName: string): string | undefined {
+  private getGuestTailscaleAddress(domainName: string): string | undefined {
     try {
       const interfaces = this.libvirt.getGuestInterfaces(domainName)
-      return firstGuestIpv4(interfaces)
+      return firstGuestTailscaleIpv4(interfaces)
     } catch {
       return undefined
     }
@@ -254,18 +254,15 @@ function firstIpv4(addresses: string[] | undefined): string | undefined {
   return addresses?.find((address) => isIpv4Address(address))
 }
 
-function firstGuestIpv4(interfaces: GuestInterfaceInfo[]): string | undefined {
-  for (const guestInterface of interfaces) {
-    const ipv4Address = guestInterface.ipAddresses
-      .map((address) => address.ipAddress)
-      .find((address) => isIpv4Address(address) && !address.startsWith("127."))
-
-    if (ipv4Address) {
-      return ipv4Address
-    }
+function firstGuestTailscaleIpv4(interfaces: GuestInterfaceInfo[]): string | undefined {
+  const tailscaleInterface = interfaces.find((guestInterface) => guestInterface.name === "tailscale0")
+  if (!tailscaleInterface) {
+    return undefined
   }
 
-  return undefined
+  return tailscaleInterface.ipAddresses
+    .map((address) => address.ipAddress)
+    .find((address) => isIpv4Address(address) && !address.startsWith("127."))
 }
 
 function isIpv4Address(value: string): boolean {
