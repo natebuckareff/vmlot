@@ -21,7 +21,7 @@ export class ApiServer implements Api {
     return images
   }
 
-  async createImage(params: CreateImageParams): Promise<CreateImage> {
+  async createImage(params: CreateImageParams): Promise<ImageInfo> {
     const createImage = new CreateImage(this.filesystem, params)
     const info = await createImage.getInfo()
     self.images.set(info.id, createImage)

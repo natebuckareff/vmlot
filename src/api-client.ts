@@ -18,7 +18,7 @@ export class ApiClient implements Api {
     throw Error('todo')
   }
 
-  async createImage(command: CreateImageParams): Promise<CreateImage> {
+  async createImage(params: CreateImageParams): Promise<ImageInfo> {
     // POST /api/create-image body=CreateImageParams
     // -> { data: ImageInfo }
     throw Error('todo')

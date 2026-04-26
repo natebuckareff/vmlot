@@ -9,16 +9,29 @@ export class LoadImage {
   constructor(private dataDir: DataDir, public readonly id: string) {}
 
   async getInfo(): Promise<ImageInfo> {
-    // TODO: returns info with download related properties set to completed states
-    // derived from metadata
+    // TODO:
+    // if there is a .download file in the image dir, status is `download-interrupted`
+    // this is signalled if getMetadata() retrurns undefined
     throw Error('todo')
   }
 
-  private async getMetadata(): Promise<ImageMetadata> {
+  async retryDownload(): Promise<CreateImage | undefined> {
+    // if there is a .download file in the image dir, retry the download
+    const info = await this.getInfo()
+    if (info.progress != 'download-interrupted') {
+      return
+    }
+    return new CreateImage(this.dataDir, {
+      // TODO: fill in from info
+    })
+  }
+
+  private async getMetadata(): Promise<ImageMetadata | undefined> {
     if (this.metadata) {
       return this.metadata
     }
     // TODO: use dataDir to read metadata
+    // if a download was interrupted, there will be no metadata, so returns undefined 
     throw Error('todo')
   }
 }

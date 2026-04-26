@@ -16,4 +16,9 @@ export interface ImageMetadata {
   hash: string,
 }
 
-export type ImageStatus = 'downloading' | 'download-fail' | 'ready'
+export type ImageStatus =
+  | 'downloading'           // download in-progress, healthy state
+  | 'download-fail'         // error mid-download
+  | 'download-interrupted'  // server crashed in middle of a download
+  | 'ready'                 // no .download files in a healthy image dir
+

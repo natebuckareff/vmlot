@@ -34,7 +34,6 @@ export class CreateImage {
     // - delete any existing, abandonded `{id}.qcow2.download` file
     // - start chunked download in the background by creating a detached promise
     // - writes to `{id}.qcow2.download`
-    // - renaming the .download file is responsibility of LoadImage
     throw Error('todo')
   }
 
