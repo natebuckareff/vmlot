@@ -34,6 +34,7 @@ export interface TailscaleDevice {
   id: string
   name?: string
   hostname?: string
+  addresses?: string[]
 }
 
 interface TailscaleDevicesResponse {
@@ -120,6 +121,12 @@ export class TailscaleClient {
     const devices = await this.listDevices()
 
     return devices.find((device) => matchesHostname(device, normalizedHostname))
+  }
+
+  async findDeviceById(id: string): Promise<TailscaleDevice | undefined> {
+    const normalizedId = id.trim()
+    const devices = await this.listDevices()
+    return devices.find((device) => device.id === normalizedId)
   }
 
   private async getAccessToken(scope: string, tags?: string[]): Promise<string> {

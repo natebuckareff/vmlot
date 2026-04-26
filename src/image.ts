@@ -9,6 +9,7 @@ export interface ImageInfo {
   url: string,        // original url
   status: ImageStatus
   hash?: string,      // hex-encoded sha256 hash, available after download
+  sizeBytes?: number
   progress: number,   // download progress
   error?: string      // error message if download failed
 }

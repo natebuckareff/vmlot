@@ -6,6 +6,7 @@ export interface VmInfo {
   baseImageName: string
   memory: number
   vcpu: number
+  address?: string
   error?: string
 }
 

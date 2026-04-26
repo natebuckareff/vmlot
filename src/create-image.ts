@@ -18,6 +18,7 @@ interface CreateImageOptions {
 export class CreateImage {
   private readonly id: string
   private readonly name: string
+  private downloadedBytes: number
   private progress: number
   private hash?: string
   private error?: string
@@ -33,6 +34,7 @@ export class CreateImage {
   ) {
     this.id = options.id ?? randomUUID()
     this.name = params.name
+    this.downloadedBytes = 0
     this.progress = 0
     this.status = "downloading"
     this.abortController = new AbortController()
@@ -46,6 +48,7 @@ export class CreateImage {
       url: this.params.url,
       status: this.status,
       hash: this.hash,
+      sizeBytes: this.downloadedBytes,
       progress: this.progress,
       error: this.error,
     }
@@ -128,6 +131,7 @@ export class CreateImage {
         await file.write(value)
         hasher.update(value)
         downloadedBytes += value.byteLength
+        this.downloadedBytes = downloadedBytes
         if (hasKnownLength) {
           this.progress = Math.min(downloadedBytes / totalBytes, 1)
         }
@@ -137,6 +141,7 @@ export class CreateImage {
     }
 
     this.hash = hasher.digest("hex")
+    this.downloadedBytes = downloadedBytes
     this.progress = 1
     await this.dataDir.completeImageDownload(this.id)
     await this.dataDir.writeImageMetadata(this.id, {

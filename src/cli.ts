@@ -4,6 +4,9 @@ import { homedir } from "node:os"
 import { Api } from "./api"
 import { ApiClient } from "./api-client"
 import { HttpServer } from "./http-server"
+import { ImageInfo } from "./image"
+import { TablePrinter } from "./table-printer"
+import { VmInfo } from "./vm"
 
 const DEFAULT_DATA_DIR = "data"
 const DEFAULT_SERVER_URL = "http://127.0.0.1:1234"
@@ -28,9 +31,7 @@ async function main() {
 
   if (resource === "images" && action === "list") {
     const images = await api.listImages()
-    for (const image of images) {
-      console.log(`${image.id} ${image.status} ${image.name} ${image.progress}`)
-    }
+    console.log(formatImageTable(images))
     return
   }
 
@@ -65,9 +66,7 @@ async function main() {
 
   if (resource === "vms" && action === "list") {
     const vms = await api.listVms()
-    for (const vm of vms) {
-      console.log(`${vm.id} ${vm.status} ${vm.name} ${vm.baseImageName} ${vm.memory} ${vm.vcpu}`)
-    }
+    console.log(formatVmTable(vms))
     return
   }
 
@@ -161,6 +160,32 @@ function usage(): string {
 
 function createApi(flags: Map<string, string>): Api {
   return new ApiClient(flags.get("--server") ?? DEFAULT_SERVER_URL)
+}
+
+function formatImageTable(images: ImageInfo[]): string {
+  const includeProgress = images.some((image) => image.status === "downloading")
+  const headers = includeProgress
+    ? ["ID", "NAME", "STATUS", "SIZE", "PROGRESS", "SOURCE"]
+    : ["ID", "NAME", "STATUS", "SIZE", "SOURCE"]
+  const table = new TablePrinter(headers, { columnSpacing: 3 })
+
+  for (const image of images) {
+    const row = [
+      image.id,
+      image.name,
+      image.status,
+      formatImageSize(image.sizeBytes),
+    ]
+
+    if (includeProgress) {
+      row.push(formatImageProgress(image))
+    }
+
+    row.push(sourceFileName(image.url))
+    table.addRow(row)
+  }
+
+  return table.render()
 }
 
 async function waitForImage(
@@ -288,6 +313,61 @@ function parseIntegerFlag(flags: Map<string, string>, name: string): number {
     throw new Error(`Invalid integer for ${name}: ${required(flags, name)}`)
   }
   return value
+}
+
+function formatVmTable(vms: VmInfo[]): string {
+  const table = new TablePrinter(["ID", "NAME", "IMAGE", "STATUS", "VCPU", "MEMORY", "ADDRESS"], {
+    columnSpacing: 3,
+  })
+
+  for (const vm of vms) {
+    table.addRow([
+      vm.id,
+      vm.name,
+      vm.baseImageName,
+      vm.status,
+      vm.vcpu,
+      formatVmMemory(vm.memory),
+      vm.address ?? "-",
+    ])
+  }
+
+  return table.render()
+}
+
+function formatVmMemory(memoryMiB: number): string {
+  return `${memoryMiB} MiB`
+}
+
+function formatImageSize(sizeBytes: number | undefined): string {
+  if (sizeBytes === undefined) {
+    return "-"
+  }
+
+  return `${Math.round(sizeBytes / (1024 * 1024))} MiB`
+}
+
+function formatImageProgress(image: ImageInfo): string {
+  if (image.status !== "downloading") {
+    return "-"
+  }
+
+  return `${Math.round(image.progress * 100)}%`
+}
+
+function sourceFileName(url: string): string {
+  if (!url) {
+    return "-"
+  }
+
+  try {
+    const pathname = new URL(url).pathname
+    const segments = pathname.split("/").filter(Boolean)
+    return segments.at(-1) ?? url
+  } catch {
+    const segments = url.split("/").filter(Boolean)
+    return segments.at(-1) ?? url
+  }
 }
 
 async function resolveValue(value: string): Promise<string> {

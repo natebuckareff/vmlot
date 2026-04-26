@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises"
 import { CreateImage } from "./create-image"
 import { DataDir } from "./data-dir"
 import { ImageInfo, ImageMetadata } from "./image"
@@ -20,6 +21,7 @@ export class LoadImage {
         url: metadata.url,
         status: "ready",
         hash: metadata.hash,
+        sizeBytes: await this.getFileSize(await this.dataDir.getImagePath(this.id)),
         progress: 1,
       }
     }
@@ -33,6 +35,7 @@ export class LoadImage {
         name: request?.name ?? this.id,
         url: request?.url ?? "",
         status: "download-interrupted",
+        sizeBytes: await this.getFileSize(await this.dataDir.getImageDownloadPath(this.id)),
         progress: 0,
         error: request ? undefined : "Interrupted download is missing request.json",
       }
@@ -71,5 +74,13 @@ export class LoadImage {
 
     this.metadata = await this.dataDir.readImageMetadata(this.id)
     return this.metadata
+  }
+
+  private async getFileSize(path: string): Promise<number | undefined> {
+    try {
+      return (await stat(path)).size
+    } catch {
+      return undefined
+    }
   }
 }

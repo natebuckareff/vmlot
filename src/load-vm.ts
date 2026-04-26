@@ -1,7 +1,7 @@
 import { CreateVm } from "./create-vm"
 import { DataDir } from "./data-dir"
-import { LibvirtClient } from "./libvirt-client"
-import { TailscaleClient } from "./tailscale-client"
+import { GuestInterfaceInfo, LibvirtClient } from "./libvirt-client"
+import { TailscaleClient, TailscaleDevice } from "./tailscale-client"
 import { VmInfo, VmMetadata, VmRequest } from "./vm"
 
 interface LoadVmOptions {
@@ -49,6 +49,7 @@ export class LoadVm {
         baseImageName: metadata.baseImageName,
         memory: metadata.memory,
         vcpu: metadata.vcpu,
+        address: await this.resolveAddress(metadata, domainState.vmStatus),
       }
     }
 
@@ -191,4 +192,76 @@ export class LoadVm {
       // Device lookup is best-effort so VM reads are not blocked on Tailscale API access.
     }
   }
+
+  private async resolveAddress(metadata: VmMetadata, status: VmInfo["status"]): Promise<string | undefined> {
+    if (status !== "running") {
+      return undefined
+    }
+
+    const tailscaleAddress = await this.getTailscaleAddress(metadata)
+    if (tailscaleAddress) {
+      return tailscaleAddress
+    }
+
+    return this.getGuestAddress(metadata.name)
+  }
+
+  private async getTailscaleAddress(metadata: VmMetadata): Promise<string | undefined> {
+    try {
+      let device: TailscaleDevice | undefined
+
+      if (metadata.tailscaleDeviceId) {
+        device = await this.tailscale.findDeviceById(metadata.tailscaleDeviceId)
+      }
+
+      if (!device) {
+        device = await this.tailscale.findDeviceByHostname(metadata.name)
+      }
+
+      if (!device) {
+        return undefined
+      }
+
+      if (device.id !== metadata.tailscaleDeviceId) {
+        metadata.tailscaleDeviceId = device.id
+        await this.dataDir.writeVmMetadata(this.id, metadata)
+        this.metadata = metadata
+      }
+
+      return firstIpv4(device.addresses)
+    } catch {
+      return undefined
+    }
+  }
+
+  private getGuestAddress(domainName: string): string | undefined {
+    try {
+      const interfaces = this.libvirt.getGuestInterfaces(domainName)
+      return firstGuestIpv4(interfaces)
+    } catch {
+      return undefined
+    }
+  }
+}
+
+function firstIpv4(addresses: string[] | undefined): string | undefined {
+  return addresses?.find((address) => isIpv4Address(address))
+}
+
+function firstGuestIpv4(interfaces: GuestInterfaceInfo[]): string | undefined {
+  for (const guestInterface of interfaces) {
+    const ipv4Address = guestInterface.ipAddresses
+      .map((address) => address.ipAddress)
+      .find((address) => isIpv4Address(address) && !address.startsWith("127."))
+
+    if (ipv4Address) {
+      return ipv4Address
+    }
+  }
+
+  return undefined
+}
+
+function isIpv4Address(value: string): boolean {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)
 }
