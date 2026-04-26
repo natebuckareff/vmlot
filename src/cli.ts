@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { homedir } from "node:os"
+import prettyBytes from "pretty-bytes"
 import prettyMilliseconds from "pretty-ms"
 import { Api } from "./api"
 import { ApiClient } from "./api-client"
@@ -347,7 +348,7 @@ function formatImageSize(sizeBytes: number | undefined): string {
     return "-"
   }
 
-  return `${Math.round(sizeBytes / (1024 * 1024))} MiB`
+  return prettyBytes(sizeBytes)
 }
 
 function formatImageProgress(image: ImageInfo): string {
