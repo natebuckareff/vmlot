@@ -74,7 +74,7 @@ export class HttpServer {
         }
 
         await this.api.removeVm(body.id)
-        return jsonResponse(200, { data: undefined })
+        return jsonResponse(200, { data: null })
       }
 
       if (pathname === "/api/create-image") {
