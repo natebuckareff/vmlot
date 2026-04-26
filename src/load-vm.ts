@@ -1,22 +1,41 @@
 import { CreateVm } from "./create-vm"
 import { DataDir } from "./data-dir"
+import { LibvirtClient } from "./libvirt-client"
 import { VmInfo, VmMetadata, VmRequest } from "./vm"
 
 export class LoadVm {
   private metadata?: VmMetadata
+  private readonly libvirt: LibvirtClient
 
   constructor(
     private readonly dataDir: DataDir,
     public readonly id: string,
-  ) {}
+  ) {
+    this.libvirt = new LibvirtClient()
+  }
 
   async getInfo(): Promise<VmInfo> {
     const metadata = await this.getMetadata()
     if (metadata) {
+      const domainState = this.libvirt.getState(metadata.name)
+
+      if (!domainState) {
+        return {
+          id: metadata.id,
+          name: metadata.name,
+          status: "create-fail",
+          baseImageId: metadata.baseImageId,
+          baseImageName: metadata.baseImageName,
+          memory: metadata.memory,
+          vcpu: metadata.vcpu,
+          error: `Libvirt domain not found: ${metadata.name}`,
+        }
+      }
+
       return {
         id: metadata.id,
         name: metadata.name,
-        status: "stopped",
+        status: domainState.vmStatus,
         baseImageId: metadata.baseImageId,
         baseImageName: metadata.baseImageName,
         memory: metadata.memory,

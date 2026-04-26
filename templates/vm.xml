@@ -32,7 +32,7 @@
       <readonly/>
     </disk>
     <interface type="network">
-      <source network="net"/>
+      <source network="clawnet"/>
       <model type="virtio"/>
     </interface>
     <serial type="pty">

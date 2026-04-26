@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import { DataDir } from "./data-dir"
 import { removeDirectoryIfPresent } from "./fs"
+import { LibvirtClient } from "./libvirt-client"
 import { runCommand } from "./util"
 import { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
 import { LoadVm } from "./load-vm"
@@ -12,12 +13,15 @@ interface CreateVmOptions {
   templateDir?: string
 }
 
+const LIBVIRT_NETWORK_NAME = "clawnet"
+
 export class CreateVm {
   private readonly id: string
   private status: VmStatus
   private error?: string
   private createPromise?: Promise<void>
   private readonly templateDir: string
+  private readonly libvirt: LibvirtClient
 
   constructor(
     private readonly dataDir: DataDir,
@@ -27,6 +31,7 @@ export class CreateVm {
     this.id = options.id ?? randomUUID()
     this.status = "creating"
     this.templateDir = options.templateDir ?? resolve(import.meta.dir, "..", "templates")
+    this.libvirt = new LibvirtClient()
   }
 
   async getInfo(): Promise<VmInfo> {
@@ -64,7 +69,7 @@ export class CreateVm {
       return undefined
     }
 
-    if (this.status !== "stopped") {
+    if (this.status !== "running" && this.status !== "stopped") {
       return undefined
     }
 
@@ -109,6 +114,8 @@ export class CreateVm {
 
     await this.createLinkedDisk(baseImagePath, vmDir)
     await this.createSeedIso(vmDir)
+    await this.ensureLibvirtNetwork()
+    await this.defineAndStartVm()
 
     const metadata: VmMetadata = {
       id: this.id,
@@ -122,7 +129,7 @@ export class CreateVm {
 
     await this.dataDir.writeVmMetadata(this.id, metadata)
     await this.dataDir.removeVmRequest(this.id)
-    this.status = "stopped"
+    this.status = "running"
   }
 
   private async createLinkedDisk(baseImagePath: string, vmDir: string): Promise<void> {
@@ -161,6 +168,37 @@ export class CreateVm {
         errorPrefix: "cloud-localds failed",
       },
     )
+  }
+
+  private async defineAndStartVm(): Promise<void> {
+    const existingDomain = this.libvirt.getState(this.params.name)
+    if (existingDomain) {
+      throw new Error(`Libvirt domain already exists: ${this.params.name}`)
+    }
+
+    const vmXmlPath = await this.dataDir.getVmXmlPath(this.id)
+    this.libvirt.define(vmXmlPath)
+    this.libvirt.autostart(this.params.name)
+    this.libvirt.start(this.params.name)
+  }
+
+  private async ensureLibvirtNetwork(): Promise<void> {
+    const networkInfo = this.libvirt.getNetworkInfo(LIBVIRT_NETWORK_NAME)
+
+    if (!networkInfo) {
+      this.libvirt.defineNetwork(join(this.templateDir, "net.xml"))
+      this.libvirt.startNetwork(LIBVIRT_NETWORK_NAME)
+      this.libvirt.autostartNetwork(LIBVIRT_NETWORK_NAME)
+      return
+    }
+
+    if (!networkInfo.active) {
+      this.libvirt.startNetwork(LIBVIRT_NETWORK_NAME)
+    }
+
+    if (!networkInfo.autostart) {
+      this.libvirt.autostartNetwork(LIBVIRT_NETWORK_NAME)
+    }
   }
 
   private toRequest(): VmRequest {

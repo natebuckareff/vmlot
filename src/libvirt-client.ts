@@ -1,6 +1,8 @@
 import { runCommand } from "./util"
 import { VmStatus } from "./vm"
 
+const DEFAULT_LIBVIRT_URI = "qemu:///system"
+
 export type LibvirtDomainState =
   | "no-state"
   | "running"
@@ -32,13 +34,25 @@ export interface GuestInterfaceInfo {
   ipAddresses: GuestIpAddressInfo[]
 }
 
+export interface LibvirtNetworkInfo {
+  name: string
+  active: boolean
+  autostart: boolean
+}
+
 export class LibvirtClient {
+  constructor(private readonly uri = process.env.LIBVIRT_URI ?? DEFAULT_LIBVIRT_URI) {}
+
   define(vmXmlPath: string): void {
     this.runVirsh(["define", vmXmlPath], "virsh define failed")
   }
 
-  create(vmXmlPath: string): void {
-    this.runVirsh(["create", vmXmlPath], "virsh create failed")
+  autostart(name: string): void {
+    this.runVirsh(["autostart", name], "virsh autostart failed")
+  }
+
+  start(name: string): void {
+    this.runVirsh(["start", name], "virsh start failed")
   }
 
   destroy(name: string): void {
@@ -100,8 +114,46 @@ export class LibvirtClient {
     return payload.return.map((value, index) => parseGuestInterfaceInfo(value, name, index))
   }
 
+  defineNetwork(networkXmlPath: string): void {
+    this.runVirsh(["net-define", networkXmlPath], "virsh net-define failed")
+  }
+
+  startNetwork(name: string): void {
+    this.runVirsh(["net-start", name], "virsh net-start failed")
+  }
+
+  autostartNetwork(name: string): void {
+    this.runVirsh(["net-autostart", name], "virsh net-autostart failed")
+  }
+
+  getNetworkInfo(name: string): LibvirtNetworkInfo | undefined {
+    const result = this.runVirsh(["net-info", name], undefined, true)
+
+    if (result.exitCode !== 0) {
+      const stderr = result.stderr.toString().trim()
+      const stdout = result.stdout.toString().trim()
+      const combined = [stdout, stderr].filter(Boolean).join("\n")
+
+      if (isMissingNetworkError(combined)) {
+        return undefined
+      }
+
+      throw new Error(
+        [
+          `virsh net-info failed for ${name}`,
+          stdout && `stdout:\n${stdout}`,
+          stderr && `stderr:\n${stderr}`,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      )
+    }
+
+    return parseNetworkInfo(name, result.stdout.toString())
+  }
+
   private runVirsh(command: string[], errorPrefix?: string, allowFailure = false) {
-    return runCommand(["virsh", ...command], {
+    return runCommand(["virsh", "--connect", this.uri, ...command], {
       allowFailure,
       errorPrefix,
     })
@@ -167,6 +219,37 @@ function normalizeVirshOutput(value: string): string {
 function isMissingDomainError(message: string): boolean {
   const normalized = message.toLowerCase()
   return normalized.includes("failed to get domain") || normalized.includes("domain not found")
+}
+
+function isMissingNetworkError(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return normalized.includes("network not found") || normalized.includes("failed to get network")
+}
+
+function parseNetworkInfo(name: string, output: string): LibvirtNetworkInfo {
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const values = new Map<string, string>()
+
+  for (const line of lines) {
+    const separatorIndex = line.indexOf(":")
+    if (separatorIndex === -1) {
+      continue
+    }
+
+    const key = line.slice(0, separatorIndex).trim().toLowerCase()
+    const value = line.slice(separatorIndex + 1).trim().toLowerCase()
+    values.set(key, value)
+  }
+
+  return {
+    name,
+    active: values.get("active") === "yes",
+    autostart: values.get("autostart") === "yes",
+  }
 }
 
 function parseGuestInterfaceInfo(value: unknown, vmName: string, index: number): GuestInterfaceInfo {
