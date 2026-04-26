@@ -22,12 +22,12 @@
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     <disk type="file" device="disk">
       <driver name="qemu" type="qcow2"/>
-      <source file="/srv/vms/{{NAME}}/disk.qcow2"/>
+      <source file="{{REMOTE_ROOT}}/{{NAME}}/disk.qcow2"/>
       <target dev="vda" bus="virtio"/>
     </disk>
     <disk type="file" device="disk">
       <driver name="qemu" type="raw"/>
-      <source file="/srv/vms/{{NAME}}/seed.iso"/>
+      <source file="{{REMOTE_ROOT}}/{{NAME}}/seed.iso"/>
       <target dev="vdb" bus="virtio"/>
       <readonly/>
     </disk>

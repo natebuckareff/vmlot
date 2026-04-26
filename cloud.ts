@@ -1,8 +1,15 @@
 import { createHash } from "node:crypto"
-import { cp, mkdir, open, readFile, stat, writeFile } from "node:fs/promises"
-import { basename, extname, join, resolve } from "node:path"
+import { mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises"
+import { basename, extname, join, relative, resolve } from "node:path"
+import { homedir } from "node:os"
 
-type Args = {
+const DEFAULT_OUTPUT_DIR = "build"
+const DEFAULT_TEMPLATE_DIR = "templates"
+const DEFAULT_REMOTE_ROOT = "/srv/vms"
+
+type Command = "build" | "deploy"
+
+type BuildArgs = {
   instance: string
   user: string
   sshPublicKey: string
@@ -10,24 +17,55 @@ type Args = {
   baseImageUrl: string
   outputDir: string
   templateDir: string
+  remoteRoot: string
+}
+
+type DeployArgs = {
+  instance: string
+  server: string
+  outputDir: string
+  remoteRoot: string
+  dryRun: boolean
+}
+
+type DeployArtifacts = {
+  instance: string
+  localVmDir: string
+  localVmXmlPath: string
+  localDiskPath: string
+  localSeedIsoPath: string
+  localBaseImagePath: string
+  remoteRoot: string
+}
+
+type VmHostApiClient = {
+  ensureVmDirectory(artifacts: DeployArtifacts): Promise<void>
+  vmExists(instance: string): Promise<boolean>
+  baseImageExists(baseImageName: string, remoteRoot: string): Promise<boolean>
+  uploadBaseImage(artifacts: DeployArtifacts): Promise<void>
+  uploadVmArtifacts(artifacts: DeployArtifacts): Promise<void>
+  defineAndStartVm(artifacts: DeployArtifacts): Promise<void>
 }
 
 async function main() {
-  const args = await parseArgs(Bun.argv.slice(2))
-  const instance = args.instance.trim()
+  const cli = await parseCli(Bun.argv.slice(2))
+
+  if (cli.command === "build") {
+    await buildInstance(cli.args)
+    return
+  }
+
+  await deployInstance(cli.args)
+}
+
+async function buildInstance(args: BuildArgs) {
+  const instance = validateInstanceName(args.instance)
   const templateDir = resolve(args.templateDir)
   const outputRootDir = resolve(args.outputDir)
   const outputDir = join(outputRootDir, instance)
-
-  const renderedUserDataPath = join(outputDir, "user-data")
-  const renderedMetaDataPath = join(outputDir, "meta-data")
-  const renderedNetworkConfigPath = join(outputDir, "network-config")
-  const renderedVmXmlPath = join(outputDir, "vm.xml")
-  const seedIsoPath = join(outputDir, "seed.iso")
-  const vmDiskPath = join(outputDir, "disk.qcow2")
+  const artifactPaths = getArtifactPaths(outputRootDir, instance)
 
   await assertPathDoesNotExist(outputDir, `VM output directory already exists: ${outputDir}`)
-  await mkdir(outputDir, { recursive: true })
 
   const userDataTemplatePath = join(templateDir, "user-data.yml")
   const metaDataTemplatePath = join(templateDir, "meta-data.yml")
@@ -44,57 +82,152 @@ async function main() {
     USER: args.user.trim(),
     PUBLIC_KEY: args.sshPublicKey.trim(),
     TS_AUTH_KEY: args.tailscaleAuthKey.trim(),
+    REMOTE_ROOT: normalizeRemoteRoot(args.remoteRoot),
   }
 
   const userData = renderTemplate(await readFile(userDataTemplatePath, "utf8"), replacements)
   const metaData = renderTemplate(await readFile(metaDataTemplatePath, "utf8"), replacements)
   const vmXml = renderTemplate(await readFile(vmXmlTemplatePath, "utf8"), replacements)
 
-  await writeFile(renderedUserDataPath, userData)
-  await writeFile(renderedMetaDataPath, metaData)
-  await writeFile(renderedVmXmlPath, vmXml)
-  await cp(networkConfigTemplatePath, renderedNetworkConfigPath)
-
-  console.log(`Rendering cloud-init into ${outputDir}`)
   const baseImagePath = await downloadBaseImage(args.baseImageUrl, outputRootDir)
   console.log(`Using base image ${baseImagePath}`)
-  await createLinkedDisk(baseImagePath, vmDiskPath, outputDir)
 
-  const result = Bun.spawnSync(
-    [
-      "cloud-localds",
-      `--network-config=${renderedNetworkConfigPath}`,
-      seedIsoPath,
-      renderedUserDataPath,
-      renderedMetaDataPath,
-    ],
-    {
-      cwd: outputDir,
-      stderr: "pipe",
-      stdout: "pipe",
-    },
-  )
+  await mkdir(outputDir, { recursive: true })
 
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString().trim()
-    const stdout = result.stdout.toString().trim()
-    throw new Error(
+  try {
+    await writeFile(artifactPaths.renderedUserDataPath, userData)
+    await writeFile(artifactPaths.renderedMetaDataPath, metaData)
+    await writeFile(artifactPaths.renderedVmXmlPath, vmXml)
+    await Bun.write(artifactPaths.renderedNetworkConfigPath, Bun.file(networkConfigTemplatePath))
+
+    console.log(`Rendering cloud-init into ${outputDir}`)
+    await createLinkedDisk(baseImagePath, artifactPaths.vmDiskPath, outputDir)
+
+    runCommand(
       [
-        "cloud-localds failed",
-        stdout && `stdout:\n${stdout}`,
-        stderr && `stderr:\n${stderr}`,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+        "cloud-localds",
+        `--network-config=${artifactPaths.renderedNetworkConfigPath}`,
+        artifactPaths.seedIsoPath,
+        artifactPaths.renderedUserDataPath,
+        artifactPaths.renderedMetaDataPath,
+      ],
+      {
+        cwd: outputDir,
+        errorPrefix: "cloud-localds failed",
+      },
     )
-  }
 
-  console.log(`Wrote ${seedIsoPath}`)
-  console.log(`Wrote ${vmDiskPath}`)
-  console.log(`Wrote ${renderedVmXmlPath}`)
+    console.log(`Wrote ${artifactPaths.seedIsoPath}`)
+    console.log(`Wrote ${artifactPaths.vmDiskPath}`)
+    console.log(`Wrote ${artifactPaths.renderedVmXmlPath}`)
+  } catch (error) {
+    await removeDirectoryIfPresent(outputDir)
+    throw error
+  }
 }
 
-async function parseArgs(argv: string[]): Promise<Args> {
+async function deployInstance(args: DeployArgs) {
+  const instance = validateInstanceName(args.instance)
+  const outputRootDir = resolve(args.outputDir)
+  const outputDir = join(outputRootDir, instance)
+  const artifactPaths = getArtifactPaths(outputRootDir, instance)
+  const remoteRoot = normalizeRemoteRoot(args.remoteRoot)
+
+  await assertLocalDeployArtifacts(outputDir, artifactPaths)
+
+  const baseImagePath = await resolveBackingFilePath(artifactPaths.vmDiskPath, outputDir)
+  await assertFileExists(baseImagePath)
+  const artifacts: DeployArtifacts = {
+    instance,
+    localVmDir: outputDir,
+    localVmXmlPath: artifactPaths.renderedVmXmlPath,
+    localDiskPath: artifactPaths.vmDiskPath,
+    localSeedIsoPath: artifactPaths.seedIsoPath,
+    localBaseImagePath: baseImagePath,
+    remoteRoot,
+  }
+  const api = createMockVmHostApiClient(args.server, args.dryRun)
+
+  console.log(`${args.dryRun ? "Planning" : "Calling"} deploy API for ${args.server}`)
+
+  if (args.dryRun) {
+    printDryRunSummary(args.server, artifacts)
+    return
+  }
+
+  await api.ensureVmDirectory(artifacts)
+  const vmExists = await api.vmExists(instance)
+
+  if (vmExists) {
+    throw new Error(`VM already exists remotely: ${instance}`)
+  }
+
+  const remoteBaseExists = await api.baseImageExists(basename(baseImagePath), remoteRoot)
+
+  if (!remoteBaseExists) {
+    await api.uploadBaseImage(artifacts)
+  } else {
+    console.log(`Remote base image already present for ${basename(baseImagePath)}`)
+  }
+
+  await api.uploadVmArtifacts(artifacts)
+  await api.defineAndStartVm(artifacts)
+
+  console.log(`Mock-deployed ${instance} via API target ${args.server}`)
+}
+
+async function parseCli(argv: string[]) {
+  const [command, ...rest] = argv
+
+  if (!command) {
+    throw new Error(usage())
+  }
+
+  if (command === "build") {
+    return {
+      command,
+      args: await parseBuildArgs(rest),
+    } as const
+  }
+
+  if (command === "deploy") {
+    return {
+      command,
+      args: parseDeployArgs(rest),
+    } as const
+  }
+
+  throw new Error(`Unknown subcommand: ${command}\n\n${usage()}`)
+}
+
+async function parseBuildArgs(argv: string[]): Promise<BuildArgs> {
+  const values = parseFlagValues(argv)
+
+  return {
+    instance: required(values, "--instance"),
+    user: required(values, "--user"),
+    sshPublicKey: await resolveValue(required(values, "--ssh-public-key")),
+    tailscaleAuthKey: required(values, "--tailscale-auth-key"),
+    baseImageUrl: required(values, "--base-image-url"),
+    outputDir: values.get("--output-dir") ?? DEFAULT_OUTPUT_DIR,
+    templateDir: values.get("--template-dir") ?? DEFAULT_TEMPLATE_DIR,
+    remoteRoot: values.get("--remote-root") ?? DEFAULT_REMOTE_ROOT,
+  }
+}
+
+function parseDeployArgs(argv: string[]): DeployArgs {
+  const values = parseFlagValues(argv)
+
+  return {
+    instance: required(values, "--instance"),
+    server: required(values, "--server"),
+    outputDir: values.get("--output-dir") ?? DEFAULT_OUTPUT_DIR,
+    remoteRoot: values.get("--remote-root") ?? DEFAULT_REMOTE_ROOT,
+    dryRun: values.has("--dry-run"),
+  }
+}
+
+function parseFlagValues(argv: string[]) {
   const values = new Map<string, string>()
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -102,6 +235,11 @@ async function parseArgs(argv: string[]): Promise<Args> {
 
     if (!arg.startsWith("--")) {
       throw new Error(`Unexpected argument: ${arg}`)
+    }
+
+    if (arg === "--dry-run") {
+      values.set(arg, "true")
+      continue
     }
 
     const [flag, inlineValue] = arg.split("=", 2)
@@ -119,36 +257,25 @@ async function parseArgs(argv: string[]): Promise<Args> {
     values.set(flag, value)
   }
 
-  const instance = required(values, "--instance")
-  const user = required(values, "--user")
-  const sshPublicKey = await resolveValue(required(values, "--ssh-public-key"))
-  const tailscaleAuthKey = required(values, "--tailscale-auth-key")
-  const baseImageUrl = required(values, "--base-image-url")
-  const outputDir = values.get("--output-dir") ?? "build"
-  const templateDir = values.get("--template-dir") ?? "templates"
-
-  return {
-    instance,
-    user,
-    baseImageUrl,
-    outputDir,
-    sshPublicKey,
-    tailscaleAuthKey,
-    templateDir,
-  }
+  return values
 }
 
 function required(values: Map<string, string>, flag: string): string {
   const value = values.get(flag)
 
   if (!value) {
-    throw new Error(
-      `Missing required ${flag}\n\n` +
-        "Usage: bun run cloud.ts --instance vm01 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... --base-image-url https://...",
-    )
+    throw new Error(`Missing required ${flag}\n\n${usage()}`)
   }
 
   return value
+}
+
+function usage() {
+  return [
+    "Usage:",
+    "  bun run cloud.ts build --instance vm01 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... --base-image-url https://... [--remote-root /srv/vms]",
+    "  bun run cloud.ts deploy --instance vm01 --server storage [--remote-root /srv/vms] [--dry-run]",
+  ].join("\n")
 }
 
 async function resolveValue(value: string): Promise<string> {
@@ -156,18 +283,35 @@ async function resolveValue(value: string): Promise<string> {
   const candidatePath = explicitPath ?? value
 
   if (explicitPath || looksLikeFilePath(candidatePath)) {
-    const path = resolve(candidatePath)
+    const path = resolvePath(candidatePath)
     return (await readFile(path, "utf8")).trim()
   }
 
   return value
 }
 
+function resolvePath(value: string) {
+  if (value === "~") {
+    return homedir()
+  }
+
+  if (value.startsWith("~/")) {
+    return join(homedir(), value.slice(2))
+  }
+
+  return resolve(value)
+}
+
 async function assertFileExists(path: string) {
   try {
-    await Bun.file(path).text()
-  } catch {
-    throw new Error(`Required file not found: ${path}`)
+    await stat(path)
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+    if (code === "ENOENT") {
+      throw new Error(`Required file not found: ${path}`)
+    }
+
+    throw error
   }
 }
 
@@ -196,6 +340,8 @@ async function downloadBaseImage(url: string, outputRootDir: string) {
     return destinationPath
   }
 
+  const tempPath = `${destinationPath}.download`
+
   console.log(`Downloading ${url}`)
   const response = await fetch(parsedUrl)
 
@@ -203,34 +349,24 @@ async function downloadBaseImage(url: string, outputRootDir: string) {
     throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`)
   }
 
-  await writeResponseWithProgress(response, destinationPath)
+  try {
+    await writeResponseWithProgress(response, tempPath)
+    await rename(tempPath, destinationPath)
+  } catch (error) {
+    await unlinkIfPresent(tempPath)
+    throw error
+  }
+
   return destinationPath
 }
 
 async function createLinkedDisk(baseImagePath: string, vmDiskPath: string, vmDir: string) {
-  const relativeBackingPath = `../${basename(baseImagePath)}`
-  const result = Bun.spawnSync(
-    ["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", relativeBackingPath, vmDiskPath],
-    {
-      cwd: vmDir,
-      stderr: "pipe",
-      stdout: "pipe",
-    },
-  )
+  const relativeBackingPath = relative(vmDir, baseImagePath)
 
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString().trim()
-    const stdout = result.stdout.toString().trim()
-    throw new Error(
-      [
-        "qemu-img create failed",
-        stdout && `stdout:\n${stdout}`,
-        stderr && `stderr:\n${stderr}`,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    )
-  }
+  runCommand(["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", relativeBackingPath, vmDiskPath], {
+    cwd: vmDir,
+    errorPrefix: "qemu-img create failed",
+  })
 }
 
 function localFilenameForUrl(url: URL) {
@@ -334,6 +470,207 @@ function renderTemplate(template: string, replacements: Record<string, string>) 
 
     return replacement
   })
+}
+
+function getArtifactPaths(outputRootDir: string, instance: string) {
+  const outputDir = join(outputRootDir, instance)
+
+  return {
+    outputDir,
+    renderedUserDataPath: join(outputDir, "user-data"),
+    renderedMetaDataPath: join(outputDir, "meta-data"),
+    renderedNetworkConfigPath: join(outputDir, "network-config"),
+    renderedVmXmlPath: join(outputDir, "vm.xml"),
+    seedIsoPath: join(outputDir, "seed.iso"),
+    vmDiskPath: join(outputDir, "disk.qcow2"),
+  }
+}
+
+async function assertLocalDeployArtifacts(outputDir: string, artifactPaths: ReturnType<typeof getArtifactPaths>) {
+  await assertDirectoryExists(outputDir, `VM output directory not found: ${outputDir}`)
+  await assertFileExists(artifactPaths.renderedVmXmlPath)
+  await assertFileExists(artifactPaths.vmDiskPath)
+  await assertFileExists(artifactPaths.seedIsoPath)
+}
+
+async function assertDirectoryExists(path: string, message: string) {
+  try {
+    const info = await stat(path)
+
+    if (!info.isDirectory()) {
+      throw new Error(message)
+    }
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+    if (code === "ENOENT") {
+      throw new Error(message)
+    }
+
+    throw error
+  }
+}
+
+async function resolveBackingFilePath(vmDiskPath: string, vmDir: string) {
+  const result = runCommand(["qemu-img", "info", "--output=json", vmDiskPath], {
+    errorPrefix: "qemu-img info failed",
+  })
+  const details = JSON.parse(result.stdout.toString()) as { "backing-filename"?: string }
+  const backingFilename = details["backing-filename"]
+
+  if (!backingFilename) {
+    throw new Error(`Could not determine backing file for ${vmDiskPath}`)
+  }
+
+  return resolve(vmDir, backingFilename)
+}
+
+function validateInstanceName(value: string) {
+  const instance = value.trim()
+
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(instance)) {
+    throw new Error(`Invalid instance name: ${value}`)
+  }
+
+  return instance
+}
+
+function normalizeRemoteRoot(value: string) {
+  const trimmed = value.trim()
+
+  if (!trimmed.startsWith("/")) {
+    throw new Error(`Remote root must be an absolute path: ${value}`)
+  }
+
+  return trimmed === "/" ? "/" : trimmed.replace(/\/+$/, "")
+}
+
+function runCommand(
+  command: string[],
+  options: {
+    cwd?: string
+    allowFailure?: boolean
+    errorPrefix?: string
+  } = {},
+) {
+  const result = Bun.spawnSync(command, {
+    cwd: options.cwd,
+    stderr: "pipe",
+    stdout: "pipe",
+  })
+
+  if (result.exitCode !== 0 && !options.allowFailure) {
+    const stderr = result.stderr.toString().trim()
+    const stdout = result.stdout.toString().trim()
+    throw new Error(
+      [
+        options.errorPrefix ?? `Command failed: ${command.join(" ")}`,
+        stdout && `stdout:\n${stdout}`,
+        stderr && `stderr:\n${stderr}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    )
+  }
+
+  return result
+}
+
+function createMockVmHostApiClient(target: string, dryRun: boolean): VmHostApiClient {
+  return {
+    async ensureVmDirectory(artifacts) {
+      logMockApiCall(target, "ensureVmDirectory", {
+        instance: artifacts.instance,
+        remoteRoot: artifacts.remoteRoot,
+      }, dryRun)
+    },
+    async vmExists(instance) {
+      logMockApiCall(target, "vmExists", { instance }, dryRun)
+      return false
+    },
+    async baseImageExists(baseImageName, remoteRoot) {
+      logMockApiCall(target, "baseImageExists", { baseImageName, remoteRoot }, dryRun)
+      return false
+    },
+    async uploadBaseImage(artifacts) {
+      logMockApiCall(target, "uploadBaseImage", {
+        instance: artifacts.instance,
+        localBaseImagePath: artifacts.localBaseImagePath,
+        remoteRoot: artifacts.remoteRoot,
+      }, dryRun)
+    },
+    async uploadVmArtifacts(artifacts) {
+      logMockApiCall(target, "uploadVmArtifacts", {
+        instance: artifacts.instance,
+        localVmDir: artifacts.localVmDir,
+        localVmXmlPath: artifacts.localVmXmlPath,
+        localDiskPath: artifacts.localDiskPath,
+        localSeedIsoPath: artifacts.localSeedIsoPath,
+      }, dryRun)
+    },
+    async defineAndStartVm(artifacts) {
+      logMockApiCall(target, "defineAndStartVm", {
+        instance: artifacts.instance,
+        localVmXmlPath: artifacts.localVmXmlPath,
+      }, dryRun)
+    },
+  }
+}
+
+function logMockApiCall(target: string, action: string, payload: Record<string, string>, dryRun: boolean) {
+  const prefix = dryRun ? "[dry-run]" : "[mock-api]"
+  console.log(`${prefix} ${target} ${action}`)
+
+  for (const [key, value] of Object.entries(payload)) {
+    console.log(`  ${key}: ${value}`)
+  }
+}
+
+function printDryRunSummary(target: string, artifacts: DeployArtifacts) {
+  console.log("Planned deploy API calls:")
+  logMockApiCall(target, "ensureVmDirectory", {
+    instance: artifacts.instance,
+    remoteRoot: artifacts.remoteRoot,
+  }, true)
+  logMockApiCall(target, "vmExists", {
+    instance: artifacts.instance,
+  }, true)
+  logMockApiCall(target, "baseImageExists", {
+    baseImageName: basename(artifacts.localBaseImagePath),
+    remoteRoot: artifacts.remoteRoot,
+  }, true)
+  logMockApiCall(target, "uploadBaseImage", {
+    instance: artifacts.instance,
+    localBaseImagePath: artifacts.localBaseImagePath,
+    remoteRoot: artifacts.remoteRoot,
+  }, true)
+  logMockApiCall(target, "uploadVmArtifacts", {
+    instance: artifacts.instance,
+    localVmDir: artifacts.localVmDir,
+    localVmXmlPath: artifacts.localVmXmlPath,
+    localDiskPath: artifacts.localDiskPath,
+    localSeedIsoPath: artifacts.localSeedIsoPath,
+  }, true)
+  logMockApiCall(target, "defineAndStartVm", {
+    instance: artifacts.instance,
+    localVmXmlPath: artifacts.localVmXmlPath,
+  }, true)
+}
+
+async function unlinkIfPresent(path: string) {
+  try {
+    await unlink(path)
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+    if (code === "ENOENT") {
+      return
+    }
+
+    throw error
+  }
+}
+
+async function removeDirectoryIfPresent(path: string) {
+  await rm(path, { recursive: true, force: true })
 }
 
 await main().catch((error: unknown) => {
