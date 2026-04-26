@@ -1,0 +1,14 @@
+{
+  "name": "clawthing",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "pretty-ms": "^9.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
