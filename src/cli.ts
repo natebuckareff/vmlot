@@ -1,8 +1,8 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
-import { basename, join, relative, resolve } from "node:path"
+import { readFile, stat } from "node:fs/promises"
+import { basename, join, resolve } from "node:path"
 import { homedir } from "node:os"
+import { getVmArtifactPaths, type VmArtifactPaths, VmBuild } from "./build"
 import { VmHostApiClient, type DeployArtifacts } from "./client"
-import { ImageDownload } from "./download"
 
 const DEFAULT_OUTPUT_DIR = "build"
 const DEFAULT_TEMPLATE_DIR = "templates"
@@ -42,78 +42,26 @@ async function main() {
 
 async function buildInstance(args: BuildArgs) {
   const instance = validateInstanceName(args.instance)
-  const templateDir = resolve(args.templateDir)
   const outputRootDir = resolve(args.outputDir)
-  const outputDir = join(outputRootDir, instance)
-  const artifactPaths = getArtifactPaths(outputRootDir, instance)
+  const build = new VmBuild({
+    instance,
+    user: args.user,
+    sshPublicKey: args.sshPublicKey,
+    tailscaleAuthKey: args.tailscaleAuthKey,
+    baseImageUrl: args.baseImageUrl,
+    outputRootDir,
+    templateDir: resolve(args.templateDir),
+    remoteRoot: normalizeRemoteRoot(args.remoteRoot),
+  })
 
-  await assertPathDoesNotExist(outputDir, `VM output directory already exists: ${outputDir}`)
-
-  const userDataTemplatePath = join(templateDir, "user-data.yml")
-  const metaDataTemplatePath = join(templateDir, "meta-data.yml")
-  const networkConfigTemplatePath = join(templateDir, "network-config.yml")
-  const vmXmlTemplatePath = join(templateDir, "vm.xml")
-
-  await assertFileExists(userDataTemplatePath)
-  await assertFileExists(metaDataTemplatePath)
-  await assertFileExists(networkConfigTemplatePath)
-  await assertFileExists(vmXmlTemplatePath)
-
-  const replacements = {
-    NAME: instance,
-    USER: args.user.trim(),
-    PUBLIC_KEY: args.sshPublicKey.trim(),
-    TS_AUTH_KEY: args.tailscaleAuthKey.trim(),
-    REMOTE_ROOT: normalizeRemoteRoot(args.remoteRoot),
-  }
-
-  const userData = renderTemplate(await readFile(userDataTemplatePath, "utf8"), replacements)
-  const metaData = renderTemplate(await readFile(metaDataTemplatePath, "utf8"), replacements)
-  const vmXml = renderTemplate(await readFile(vmXmlTemplatePath, "utf8"), replacements)
-
-  const baseImageDownload = new ImageDownload(args.baseImageUrl, outputRootDir)
-  const baseImagePath = await baseImageDownload.ensureDownloaded()
-  console.log(`Using base image ${baseImagePath}`)
-
-  await mkdir(outputDir, { recursive: true })
-
-  try {
-    await writeFile(artifactPaths.renderedUserDataPath, userData)
-    await writeFile(artifactPaths.renderedMetaDataPath, metaData)
-    await writeFile(artifactPaths.renderedVmXmlPath, vmXml)
-    await Bun.write(artifactPaths.renderedNetworkConfigPath, Bun.file(networkConfigTemplatePath))
-
-    console.log(`Rendering cloud-init into ${outputDir}`)
-    await createLinkedDisk(baseImagePath, artifactPaths.vmDiskPath, outputDir)
-
-    runCommand(
-      [
-        "cloud-localds",
-        `--network-config=${artifactPaths.renderedNetworkConfigPath}`,
-        artifactPaths.seedIsoPath,
-        artifactPaths.renderedUserDataPath,
-        artifactPaths.renderedMetaDataPath,
-      ],
-      {
-        cwd: outputDir,
-        errorPrefix: "cloud-localds failed",
-      },
-    )
-
-    console.log(`Wrote ${artifactPaths.seedIsoPath}`)
-    console.log(`Wrote ${artifactPaths.vmDiskPath}`)
-    console.log(`Wrote ${artifactPaths.renderedVmXmlPath}`)
-  } catch (error) {
-    await removeDirectoryIfPresent(outputDir)
-    throw error
-  }
+  await build.build()
 }
 
 async function deployInstance(args: DeployArgs) {
   const instance = validateInstanceName(args.instance)
   const outputRootDir = resolve(args.outputDir)
   const outputDir = join(outputRootDir, instance)
-  const artifactPaths = getArtifactPaths(outputRootDir, instance)
+  const artifactPaths = getVmArtifactPaths(outputRootDir, instance)
   const remoteRoot = normalizeRemoteRoot(args.remoteRoot)
 
   await assertLocalDeployArtifacts(outputDir, artifactPaths)
@@ -298,61 +246,11 @@ async function assertFileExists(path: string) {
   }
 }
 
-async function assertPathDoesNotExist(path: string, message: string) {
-  try {
-    await stat(path)
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
-    if (code === "ENOENT") {
-      return
-    }
-
-    throw error
-  }
-
-  throw new Error(message)
-}
-
-async function createLinkedDisk(baseImagePath: string, vmDiskPath: string, vmDir: string) {
-  const relativeBackingPath = relative(vmDir, baseImagePath)
-
-  runCommand(["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", relativeBackingPath, vmDiskPath], {
-    cwd: vmDir,
-    errorPrefix: "qemu-img create failed",
-  })
-}
-
 function looksLikeFilePath(value: string) {
   return value.startsWith("/") || value.startsWith("./") || value.startsWith("../") || value.startsWith("~")
 }
 
-function renderTemplate(template: string, replacements: Record<string, string>) {
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, key: string) => {
-    const replacement = replacements[key]
-
-    if (replacement === undefined) {
-      throw new Error(`No replacement found for template token {{${key}}}`)
-    }
-
-    return replacement
-  })
-}
-
-function getArtifactPaths(outputRootDir: string, instance: string) {
-  const outputDir = join(outputRootDir, instance)
-
-  return {
-    outputDir,
-    renderedUserDataPath: join(outputDir, "user-data"),
-    renderedMetaDataPath: join(outputDir, "meta-data"),
-    renderedNetworkConfigPath: join(outputDir, "network-config"),
-    renderedVmXmlPath: join(outputDir, "vm.xml"),
-    seedIsoPath: join(outputDir, "seed.iso"),
-    vmDiskPath: join(outputDir, "disk.qcow2"),
-  }
-}
-
-async function assertLocalDeployArtifacts(outputDir: string, artifactPaths: ReturnType<typeof getArtifactPaths>) {
+async function assertLocalDeployArtifacts(outputDir: string, artifactPaths: VmArtifactPaths) {
   await assertDirectoryExists(outputDir, `VM output directory not found: ${outputDir}`)
   await assertFileExists(artifactPaths.renderedVmXmlPath)
   await assertFileExists(artifactPaths.vmDiskPath)
@@ -439,10 +337,6 @@ function runCommand(
   }
 
   return result
-}
-
-async function removeDirectoryIfPresent(path: string) {
-  await rm(path, { recursive: true, force: true })
 }
 
 await main().catch((error: unknown) => {
