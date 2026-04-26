@@ -1,22 +1,31 @@
 import { CreateVm } from "./create-vm"
 import { DataDir } from "./data-dir"
 import { LibvirtClient } from "./libvirt-client"
+import { TailscaleClient } from "./tailscale-client"
 import { VmInfo, VmMetadata, VmRequest } from "./vm"
+
+interface LoadVmOptions {
+  tailscale: TailscaleClient
+}
 
 export class LoadVm {
   private metadata?: VmMetadata
   private readonly libvirt: LibvirtClient
+  private readonly tailscale: TailscaleClient
 
   constructor(
     private readonly dataDir: DataDir,
     public readonly id: string,
+    options: LoadVmOptions,
   ) {
     this.libvirt = new LibvirtClient()
+    this.tailscale = options.tailscale
   }
 
   async getInfo(): Promise<VmInfo> {
     const metadata = await this.getMetadata()
     if (metadata) {
+      await this.maybePopulateTailscaleDeviceId(metadata)
       const domainState = this.libvirt.getState(metadata.name)
 
       if (!domainState) {
@@ -81,7 +90,7 @@ export class LoadVm {
       return undefined
     }
 
-    const createVm = new CreateVm(this.dataDir, request, { id: this.id })
+    const createVm = new CreateVm(this.dataDir, request, { id: this.id, tailscale: this.tailscale })
     await createVm.start()
     return createVm
   }
@@ -162,5 +171,24 @@ export class LoadVm {
 
     const request = await this.getRequest()
     return request?.name
+  }
+
+  private async maybePopulateTailscaleDeviceId(metadata: VmMetadata): Promise<void> {
+    if (metadata.tailscaleDeviceId) {
+      return
+    }
+
+    try {
+      const device = await this.tailscale.findDeviceByHostname(metadata.name)
+      if (!device) {
+        return
+      }
+
+      metadata.tailscaleDeviceId = device.id
+      await this.dataDir.writeVmMetadata(this.id, metadata)
+      this.metadata = metadata
+    } catch {
+      // Device lookup is best-effort so VM reads are not blocked on Tailscale API access.
+    }
   }
 }

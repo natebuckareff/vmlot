@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import { DataDir } from "./data-dir"
 import { LibvirtClient } from "./libvirt-client"
+import { TailscaleClient } from "./tailscale-client"
 import { runCommand } from "./util"
 import { CreateVmParams, VmInfo, VmMetadata, VmRequest, VmStatus } from "./vm"
 import { LoadVm } from "./load-vm"
@@ -10,6 +11,7 @@ import { LoadVm } from "./load-vm"
 interface CreateVmOptions {
   id?: string
   templateDir?: string
+  tailscale: TailscaleClient
 }
 
 const LIBVIRT_NETWORK_NAME = "clawnet"
@@ -21,16 +23,18 @@ export class CreateVm {
   private createPromise?: Promise<void>
   private readonly templateDir: string
   private readonly libvirt: LibvirtClient
+  private readonly tailscale: TailscaleClient
 
   constructor(
     private readonly dataDir: DataDir,
     public readonly params: CreateVmParams,
-    options: CreateVmOptions = {},
+    options: CreateVmOptions,
   ) {
     this.id = options.id ?? randomUUID()
     this.status = "creating"
     this.templateDir = options.templateDir ?? resolve(import.meta.dir, "..", "templates")
     this.libvirt = new LibvirtClient()
+    this.tailscale = options.tailscale
   }
 
   async getInfo(): Promise<VmInfo> {
@@ -71,7 +75,7 @@ export class CreateVm {
       return undefined
     }
 
-    return new LoadVm(this.dataDir, this.id)
+    return new LoadVm(this.dataDir, this.id, { tailscale: this.tailscale })
   }
 
   private async runCreate(): Promise<void> {

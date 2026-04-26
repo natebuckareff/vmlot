@@ -15,7 +15,7 @@ async function main() {
   const flags = parseFlags(rest)
 
   if (resource === "server" && action === "start") {
-    const server = new HttpServer({
+    const server = await HttpServer.create({
       dataDir: resolve(flags.get("--data-dir") ?? DEFAULT_DATA_DIR),
       hostname: flags.get("--host"),
       port: flags.has("--port") ? Number.parseInt(required(flags, "--port"), 10) : undefined,
@@ -78,7 +78,6 @@ async function main() {
       baseImageId,
       user: required(flags, "--user"),
       sshPublicKey: await resolveValue(required(flags, "--ssh-public-key")),
-      tailscaleAuthKey: required(flags, "--tailscale-auth-key"),
       memory: flags.has("--memory") ? parseIntegerFlag(flags, "--memory") : DEFAULT_VM_MEMORY,
       vcpu: flags.has("--vcpu") ? parseIntegerFlag(flags, "--vcpu") : DEFAULT_VM_VCPU,
     })
@@ -153,7 +152,7 @@ function usage(): string {
     "  bun src/cli.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts images remove --id <image-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms list [--server http://127.0.0.1:1234]",
-    "  bun src/cli.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub --tailscale-auth-key tskey-... [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
+    "  bun src/cli.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms start --id <vm-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms stop --id <vm-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms remove --id <vm-id> [--server http://127.0.0.1:1234]",
@@ -257,6 +256,7 @@ async function waitForVm(api: Api, id: string) {
     await Bun.sleep(100)
   }
 }
+
 
 async function resolveBaseImageId(api: Api, value: string): Promise<string> {
   const images = await api.listImages()

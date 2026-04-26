@@ -1,5 +1,8 @@
 import { resolve } from "node:path"
 import { ApiServer } from "./api-server"
+import { DataDir } from "./data-dir"
+import { ServerConfig } from "./server-config"
+import { TailscaleClient } from "./tailscale-client"
 
 interface HttpServerOptions {
   dataDir?: string
@@ -12,10 +15,23 @@ export class HttpServer {
   private readonly hostname: string
   private readonly port: number
 
-  constructor(options: HttpServerOptions = {}) {
-    this.api = new ApiServer(resolve(options.dataDir ?? "data"))
+  constructor(api: ApiServer, options: HttpServerOptions = {}) {
+    this.api = api
     this.hostname = options.hostname ?? "0.0.0.0"
     this.port = options.port ?? 1234
+  }
+
+  static async create(options: HttpServerOptions = {}): Promise<HttpServer> {
+    const dataDir = resolve(options.dataDir ?? "data")
+    const serverConfig = new ServerConfig(dataDir)
+    const config = await serverConfig.read()
+    const tailscale = TailscaleClient.fromConfig(config.tailscale)
+    const api = new ApiServer({
+      dataDir: new DataDir(dataDir),
+      tailscale,
+    })
+
+    return new HttpServer(api, { ...options, dataDir })
   }
 
   async listen(): Promise<void> {
@@ -172,7 +188,6 @@ function isCreateVmBody(
   baseImageId: string
   user: string
   sshPublicKey: string
-  tailscaleAuthKey: string
   memory: number
   vcpu: number
 } {
@@ -187,8 +202,6 @@ function isCreateVmBody(
     typeof body.user === "string" &&
     "sshPublicKey" in body &&
     typeof body.sshPublicKey === "string" &&
-    "tailscaleAuthKey" in body &&
-    typeof body.tailscaleAuthKey === "string" &&
     "memory" in body &&
     typeof body.memory === "number" &&
     "vcpu" in body &&
@@ -216,16 +229,16 @@ function jsonResponse(status: number, body: unknown): Response {
 
 if (import.meta.main) {
   const flags = parseFlags(Bun.argv.slice(2))
-  const server = new HttpServer({
+  HttpServer.create({
     dataDir: flags.get("--data-dir"),
     hostname: flags.get("--host"),
     port: flags.has("--port") ? Number.parseInt(required(flags, "--port"), 10) : undefined,
   })
-
-  server.listen().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error))
-    process.exitCode = 1
-  })
+    .then((server) => server.listen())
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error))
+      process.exitCode = 1
+    })
 }
 
 function parseFlags(argv: string[]): Map<string, string> {

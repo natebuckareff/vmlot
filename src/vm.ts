@@ -27,6 +27,7 @@ export interface VmMetadata {
   memory: number
   vcpu: number
   user: string
+  tailscaleDeviceId?: string
 }
 
 export interface CreateVmParams {
@@ -35,6 +36,15 @@ export interface CreateVmParams {
   user: string
   sshPublicKey: string
   tailscaleAuthKey: string
+  memory: number
+  vcpu: number
+}
+
+export interface CreateVmInput {
+  name: string
+  baseImageId: string
+  user: string
+  sshPublicKey: string
   memory: number
   vcpu: number
 }

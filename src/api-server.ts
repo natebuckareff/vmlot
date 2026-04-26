@@ -5,17 +5,25 @@ import { DataDir } from "./data-dir"
 import { ImageInfo } from "./image"
 import { LoadImage } from "./load-image"
 import { LoadVm } from "./load-vm"
-import { CreateVmParams, VmInfo } from "./vm"
+import { TailscaleClient } from "./tailscale-client"
+import { CreateVmInput, CreateVmParams, VmInfo } from "./vm"
+
+interface ApiServerOptions {
+  dataDir: DataDir
+  tailscale: TailscaleClient
+}
 
 export class ApiServer implements Api {
   private isSetup: boolean
   private readonly dataDir: DataDir
+  private readonly tailscale: TailscaleClient
   private readonly vms: Map<string, CreateVm | LoadVm>
   private readonly images: Map<string, CreateImage | LoadImage>
 
-  constructor(dataDirPath = "data") {
+  constructor(options: ApiServerOptions) {
     this.isSetup = false
-    this.dataDir = new DataDir(dataDirPath)
+    this.dataDir = options.dataDir
+    this.tailscale = options.tailscale
     this.vms = new Map()
     this.images = new Map()
   }
@@ -90,11 +98,12 @@ export class ApiServer implements Api {
     this.images.delete(id)
   }
 
-  async createVm(params: CreateVmParams): Promise<VmInfo> {
+  async createVm(input: CreateVmInput): Promise<VmInfo> {
     await this.setup()
-    await this.validateCreateVm(params)
+    await this.validateCreateVmInput(input)
+    const params = await this.resolveCreateVmParams(input)
 
-    const createVm = new CreateVm(this.dataDir, params)
+    const createVm = new CreateVm(this.dataDir, params, { tailscale: this.tailscale })
     const info = await createVm.getInfo()
     this.vms.set(info.id, createVm)
     await createVm.start()
@@ -131,7 +140,7 @@ export class ApiServer implements Api {
     }
 
     for (const id of await this.dataDir.listVms()) {
-      const loadVm = new LoadVm(this.dataDir, id)
+      const loadVm = new LoadVm(this.dataDir, id, { tailscale: this.tailscale })
       const activeVm = await loadVm.retryCreate()
       this.vms.set(id, activeVm ?? loadVm)
     }
@@ -139,43 +148,53 @@ export class ApiServer implements Api {
     this.isSetup = true
   }
 
-  private async validateCreateVm(params: CreateVmParams): Promise<void> {
-    if (params.name.trim().length === 0) {
+  private async validateCreateVmInput(input: CreateVmInput): Promise<void> {
+    if (input.name.trim().length === 0) {
       throw new Error("VM name is required")
     }
 
-    if (params.user.trim().length === 0) {
+    if (input.user.trim().length === 0) {
       throw new Error("VM user is required")
     }
 
-    if (params.sshPublicKey.trim().length === 0) {
+    if (input.sshPublicKey.trim().length === 0) {
       throw new Error("VM sshPublicKey is required")
     }
 
-    if (params.tailscaleAuthKey.trim().length === 0) {
-      throw new Error("VM tailscaleAuthKey is required")
+    if (!Number.isInteger(input.memory) || input.memory <= 0) {
+      throw new Error(`Invalid VM memory: ${input.memory}`)
     }
 
-    if (!Number.isInteger(params.memory) || params.memory <= 0) {
-      throw new Error(`Invalid VM memory: ${params.memory}`)
+    if (!Number.isInteger(input.vcpu) || input.vcpu <= 0) {
+      throw new Error(`Invalid VM vcpu: ${input.vcpu}`)
     }
 
-    if (!Number.isInteger(params.vcpu) || params.vcpu <= 0) {
-      throw new Error(`Invalid VM vcpu: ${params.vcpu}`)
-    }
-
-    const existingVm = (await this.listVms()).find((vm) => vm.name === params.name)
+    const existingVm = (await this.listVms()).find((vm) => vm.name === input.name)
     if (existingVm) {
-      throw new Error(`VM name already exists: ${params.name}`)
+      throw new Error(`VM name already exists: ${input.name}`)
     }
 
-    const baseImage = (await this.listImages()).find((image) => image.id === params.baseImageId)
+    const baseImage = (await this.listImages()).find((image) => image.id === input.baseImageId)
     if (!baseImage) {
-      throw new Error(`Base image not found: ${params.baseImageId}`)
+      throw new Error(`Base image not found: ${input.baseImageId}`)
     }
 
     if (baseImage.status !== "ready") {
       throw new Error(`Base image is not ready: ${baseImage.name} (${baseImage.status})`)
+    }
+  }
+
+  private async resolveCreateVmParams(input: CreateVmInput): Promise<CreateVmParams> {
+    const authKey = await this.tailscale.createAuthKey(`clawthing VM ${input.name}`)
+
+    return {
+      name: input.name,
+      baseImageId: input.baseImageId,
+      user: input.user,
+      sshPublicKey: input.sshPublicKey,
+      tailscaleAuthKey: authKey.key,
+      memory: input.memory,
+      vcpu: input.vcpu,
     }
   }
 
@@ -192,7 +211,7 @@ export class ApiServer implements Api {
       throw new Error(`Cannot operate on VM while creation is in progress: ${info.name}`)
     }
 
-    const loadVm = new LoadVm(this.dataDir, id)
+    const loadVm = new LoadVm(this.dataDir, id, { tailscale: this.tailscale })
     this.vms.set(id, loadVm)
     return loadVm
   }
