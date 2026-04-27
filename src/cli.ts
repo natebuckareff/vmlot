@@ -42,21 +42,7 @@ async function main() {
     const name = required(flags, "--name")
     const url = required(flags, "--url")
     const image = await api.createImage({ name, url })
-    console.log(`${formatCliId(image.id)} ${image.status} ${image.name}`)
-    const progressReporter = createImageProgressReporter()
-    let completedImage
-
-    try {
-      completedImage = await waitForImage(api, image.id, (activeImage) => {
-        progressReporter.update(activeImage)
-      })
-    } catch (error: unknown) {
-      progressReporter.finishLine()
-      throw error
-    }
-
-    progressReporter.update(completedImage, { done: true })
-    console.log(`${formatCliId(completedImage.id)} ${completedImage.status} ${completedImage.name} ${completedImage.progress}`)
+    console.log(formatCliId(image.id))
     return
   }
 
@@ -194,81 +180,6 @@ function formatImageTable(images: ImageInfo[]): string {
   }
 
   return table.render()
-}
-
-async function waitForImage(
-  api: Api,
-  id: string,
-  onUpdate?: (image: Awaited<ReturnType<Api["listImages"]>>[number]) => void,
-) {
-  while (true) {
-    const image = (await api.listImages()).find((candidate) => candidate.id === id)
-    if (!image) {
-      throw new Error(`Image not found after create: ${id}`)
-    }
-
-    onUpdate?.(image)
-
-    if (image.status === "ready") {
-      return image
-    }
-
-    if (image.status !== "downloading") {
-      throw new Error(image.error ?? `Image creation failed: ${image.status}`)
-    }
-
-    await Bun.sleep(100)
-  }
-}
-
-function createImageProgressReporter() {
-  const isTty = Boolean(process.stdout.isTTY)
-  let lastRenderedKey = ""
-  let hasRendered = false
-
-  const update = (
-    image: Awaited<ReturnType<Api["listImages"]>>[number],
-    options: { done?: boolean } = {},
-  ) => {
-    const percent = Math.max(0, Math.min(100, Math.round(image.progress * 100)))
-    const blocks = 24
-    const filledBlocks = Math.round((percent / 100) * blocks)
-    const bar = `[${"=".repeat(filledBlocks)}${" ".repeat(blocks - filledBlocks)}]`
-    const line = `${bar} ${percent.toString().padStart(3, " ")}% ${image.name}`
-    const key = `${percent}:${options.done ? "done" : "active"}`
-
-    if (key === lastRenderedKey) {
-      return
-    }
-
-    lastRenderedKey = key
-
-    if (isTty) {
-      hasRendered = true
-      process.stdout.write(`\r\x1b[2K${line}`)
-      if (options.done) {
-        process.stdout.write("\n")
-        hasRendered = false
-      }
-      return
-    }
-
-    console.log(line)
-  }
-
-  const finishLine = () => {
-    if (!isTty || !hasRendered) {
-      return
-    }
-
-    process.stdout.write("\n")
-    hasRendered = false
-  }
-
-  return {
-    update,
-    finishLine,
-  }
 }
 
 async function waitForVm(api: Api, id: string) {
