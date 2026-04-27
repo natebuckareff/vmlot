@@ -8,7 +8,7 @@ import type { ImageInfo } from "./image"
 import { LoadImage } from "./load-image"
 import { LoadVm } from "./load-vm"
 import { TailscaleClient } from "./tailscale-client"
-import type { CreateVmInput, CreateVmParams, VmInfo } from "./vm"
+import { DEFAULT_VM_USER, type CreateVmInput, type CreateVmParams, type VmInfo } from "./vm"
 
 interface ApiServerOptions {
   dataDir: DataDir
@@ -154,10 +154,6 @@ export class ApiServer implements Api {
       throw new Error("VM name is required")
     }
 
-    if (input.user.trim().length === 0) {
-      throw new Error("VM user is required")
-    }
-
     if (input.sshPublicKey.trim().length === 0) {
       throw new Error("VM sshPublicKey is required")
     }
@@ -187,17 +183,26 @@ export class ApiServer implements Api {
     }
   }
 
-  private async normalizeCreateVmInput(input: CreateVmInput): Promise<CreateVmInput & { baseImageId: Id }> {
-    await this.validateCreateVmInput(input)
+  private async normalizeCreateVmInput(
+    input: CreateVmInput,
+  ): Promise<Omit<CreateVmInput, "user" | "baseImageId"> & { user: string; baseImageId: Id }> {
+    const normalizedInput: Omit<CreateVmInput, "user"> & { user: string } = {
+      ...input,
+      user: input.user?.trim() || DEFAULT_VM_USER,
+    }
+
+    await this.validateCreateVmInput(normalizedInput)
     const baseImage = await this.resolveBaseImage(input.baseImageId)
 
     return {
-      ...input,
+      ...normalizedInput,
       baseImageId: baseImage.id,
     }
   }
 
-  private async resolveCreateVmParams(input: CreateVmInput & { baseImageId: Id }): Promise<CreateVmParams> {
+  private async resolveCreateVmParams(
+    input: Omit<CreateVmInput, "user" | "baseImageId"> & { user: string; baseImageId: Id },
+  ): Promise<CreateVmParams> {
     const authKey = await this.tailscale.createAuthKey(`clawthing VM ${input.name}`)
 
     return {

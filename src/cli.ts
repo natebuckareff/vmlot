@@ -9,7 +9,7 @@ import { HttpServer } from "./http-server"
 import { formatCliId } from "./id"
 import type { ImageInfo } from "./image"
 import { TablePrinter } from "./table-printer"
-import type { VmInfo } from "./vm"
+import { DEFAULT_VM_USER, type VmInfo } from "./vm"
 
 const DEFAULT_DATA_DIR = "data"
 const DEFAULT_SERVER_URL = "http://127.0.0.1:1234"
@@ -63,7 +63,7 @@ async function main() {
     const vm = await api.createVm({
       name: required(flags, "--name"),
       baseImageId: required(flags, "--base-image"),
-      user: required(flags, "--user"),
+      user: flags.get("--user"),
       sshPublicKey: await resolveValue(required(flags, "--ssh-public-key")),
       memory: flags.has("--memory") ? parseIntegerFlag(flags, "--memory") : DEFAULT_VM_MEMORY,
       vcpu: flags.has("--vcpu") ? parseIntegerFlag(flags, "--vcpu") : DEFAULT_VM_VCPU,
@@ -144,7 +144,7 @@ function usage(): string {
     "  bun src/cli.ts images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts images remove --id <image-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms list [--server http://127.0.0.1:1234]",
-    "  bun src/cli.ts vms create --name vm01 --base-image debian-13 --user debian --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]",
+    `  bun src/cli.ts vms create --name vm01 --base-image debian-13 [--user ${DEFAULT_VM_USER}] --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]`,
     "  bun src/cli.ts vms start --id <vm-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms stop --id <vm-id> [--server http://127.0.0.1:1234]",
     "  bun src/cli.ts vms remove --id <vm-id> [--server http://127.0.0.1:1234]",

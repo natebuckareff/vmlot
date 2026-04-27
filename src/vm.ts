@@ -1,5 +1,7 @@
 import type { Id } from "./id"
 
+export const DEFAULT_VM_USER = "clawthing"
+
 export interface VmInfo {
   id: Id
   name: string
@@ -51,7 +53,7 @@ export interface CreateVmParams {
 export interface CreateVmInput {
   name: string
   baseImageId: string
-  user: string
+  user?: string
   sshPublicKey: string
   memory: number
   vcpu: number

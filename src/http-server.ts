@@ -3,6 +3,7 @@ import { ApiServer } from "./api-server"
 import { DataDir } from "./data-dir"
 import { ServerConfig } from "./server-config"
 import { TailscaleClient } from "./tailscale-client"
+import type { CreateVmInput } from "./vm"
 
 interface HttpServerOptions {
   dataDir?: string
@@ -181,16 +182,7 @@ function isCreateImageBody(body: unknown): body is { name: string; url: string }
   )
 }
 
-function isCreateVmBody(
-  body: unknown,
-): body is {
-  name: string
-  baseImageId: string
-  user: string
-  sshPublicKey: string
-  memory: number
-  vcpu: number
-} {
+function isCreateVmBody(body: unknown): body is CreateVmInput {
   return (
     typeof body === "object" &&
     body !== null &&
@@ -198,8 +190,7 @@ function isCreateVmBody(
     typeof body.name === "string" &&
     "baseImageId" in body &&
     typeof body.baseImageId === "string" &&
-    "user" in body &&
-    typeof body.user === "string" &&
+    (!("user" in body) || body.user === undefined || typeof body.user === "string") &&
     "sshPublicKey" in body &&
     typeof body.sshPublicKey === "string" &&
     "memory" in body &&
