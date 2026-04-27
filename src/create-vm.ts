@@ -49,6 +49,7 @@ export class CreateVm {
       createdAt: this.createdAt,
       baseImageId: this.params.baseImageId,
       baseImageName: baseImageMetadata?.name ?? this.params.baseImageId,
+      diskUsageBytes: await this.dataDir.getVmDiskUsage(this.id),
       memory: this.params.memory,
       vcpu: this.params.vcpu,
       error: this.error,

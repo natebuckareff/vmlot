@@ -7,6 +7,7 @@ export interface VmInfo {
   createdAt?: number
   baseImageId?: Id
   baseImageName: string
+  diskUsageBytes?: number
   memory: number
   vcpu: number
   address?: string

@@ -150,6 +150,22 @@ export class DataDir {
     return this.vmDiskPath(id)
   }
 
+  async getVmDiskUsage(id: Id): Promise<number | undefined> {
+    await this.setup()
+
+    try {
+      const stats = await stat(this.vmDiskPath(id))
+      return stats.size
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error !== null && "code" in error ? (error as { code?: string }).code : undefined
+      if (code === "ENOENT") {
+        return undefined
+      }
+
+      throw error
+    }
+  }
+
   async getVmSeedIsoPath(id: Id): Promise<string> {
     await this.setup()
     await mkdir(this.vmDirPath(id), { recursive: true })

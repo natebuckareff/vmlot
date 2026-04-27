@@ -27,6 +27,8 @@ export class LoadVm {
 
   async getInfo(): Promise<VmInfo> {
     const metadata = await this.getMetadata()
+    const diskUsageBytes = await this.dataDir.getVmDiskUsage(this.id)
+
     if (metadata) {
       await this.maybePopulateTailscaleDeviceId(metadata)
       const domainState = this.libvirt.getState(metadata.name)
@@ -39,6 +41,7 @@ export class LoadVm {
           createdAt: metadata.createdAt,
           baseImageId: metadata.baseImageId,
           baseImageName: metadata.baseImageName,
+          diskUsageBytes,
           memory: metadata.memory,
           vcpu: metadata.vcpu,
           error: `Libvirt domain not found: ${metadata.name}`,
@@ -52,6 +55,7 @@ export class LoadVm {
         createdAt: metadata.createdAt,
         baseImageId: metadata.baseImageId,
         baseImageName: metadata.baseImageName,
+        diskUsageBytes,
         memory: metadata.memory,
         vcpu: metadata.vcpu,
         address: await this.resolveAddress(metadata, domainState.vmStatus),
@@ -69,6 +73,7 @@ export class LoadVm {
         createdAt: request.createdAt,
         baseImageId: request.baseImageId,
         baseImageName: baseImageMetadata?.name ?? request.baseImageId,
+        diskUsageBytes,
         memory: request.memory,
         vcpu: request.vcpu,
       }
@@ -80,6 +85,7 @@ export class LoadVm {
       status: "create-fail",
       createdAt: undefined,
       baseImageName: "",
+      diskUsageBytes,
       memory: 0,
       vcpu: 0,
       error: "VM directory is incomplete",

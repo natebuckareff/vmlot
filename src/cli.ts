@@ -300,9 +300,12 @@ function parseIntegerFlag(flags: Map<string, string>, name: string): number {
 }
 
 function formatVmTable(vms: VmInfo[]): string {
-  const table = new TablePrinter(["ID", "NAME", "IMAGE", "STATUS", "CREATED", "VCPU", "MEMORY", "ADDRESS"], {
-    columnSpacing: 3,
-  })
+  const table = new TablePrinter(
+    ["ID", "NAME", "IMAGE", "STATUS", "CREATED", "VCPU", "MEMORY", "DISK USAGE", "ADDRESS"],
+    {
+      columnSpacing: 3,
+    },
+  )
 
   for (const vm of vms) {
     table.addRow([
@@ -313,6 +316,7 @@ function formatVmTable(vms: VmInfo[]): string {
       formatCreatedAt(vm.createdAt),
       vm.vcpu,
       formatVmMemory(vm.memory),
+      formatImageSize(vm.diskUsageBytes),
       vm.address ?? "-",
     ])
   }
