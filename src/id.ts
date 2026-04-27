@@ -13,7 +13,7 @@ export function generateId(): Id {
 }
 
 export function formatCliId(id: string): string {
-  return id.slice(0, CLI_ID_DISPLAY_BYTES * 2)
+  return id.slice(0, CLI_ID_DISPLAY_BYTES)
 }
 
 export function isFullId(value: string): value is Id {
