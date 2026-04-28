@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { parseArgs } from "node:util";
 import prettyBytes from "pretty-bytes";
 import prettyMilliseconds from "pretty-ms";
 import type { Api } from "./api";
@@ -17,6 +18,23 @@ const DEFAULT_SERVER_PORT = 10450;
 const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 const DEFAULT_VM_MEMORY = 2048;
 const DEFAULT_VM_VCPU = 2;
+
+type StringFlagOptions = Record<string, { type: "string" }>;
+
+const CLI_OPTIONS = {
+  "base-image": { type: "string" },
+  "data-dir": { type: "string" },
+  host: { type: "string" },
+  id: { type: "string" },
+  memory: { type: "string" },
+  name: { type: "string" },
+  port: { type: "string" },
+  server: { type: "string" },
+  "ssh-public-key": { type: "string" },
+  url: { type: "string" },
+  user: { type: "string" },
+  vcpu: { type: "string" },
+} as const;
 
 async function main() {
   const [resource, ...args] = Bun.argv.slice(2);
@@ -136,33 +154,21 @@ async function main() {
 }
 
 function parseFlags(argv: string[]): Map<string, string> {
-  const values = new Map<string, string>();
+  const { values } = parseArgs({
+    args: argv,
+    options: CLI_OPTIONS satisfies StringFlagOptions,
+    strict: true,
+    allowPositionals: false,
+  });
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === undefined) {
-      break;
+  const flags = new Map<string, string>();
+  for (const [name, value] of Object.entries(values)) {
+    if (typeof value === "string") {
+      flags.set(`--${name}`, value);
     }
-
-    if (!arg.startsWith("--")) {
-      throw new Error(`Unexpected argument: ${arg}`);
-    }
-
-    const [parsedFlag, inlineValue] = arg.split("=", 2);
-    const flag = parsedFlag ?? arg;
-    const value = inlineValue ?? argv[index + 1];
-    if (!value || value.startsWith("--")) {
-      throw new Error(`Missing value for ${flag}`);
-    }
-
-    if (inlineValue === undefined) {
-      index += 1;
-    }
-
-    values.set(flag, value);
   }
 
-  return values;
+  return flags;
 }
 
 function required(flags: Map<string, string>, name: string): string {
