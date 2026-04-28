@@ -11,6 +11,8 @@ interface HttpServerOptions {
   port?: number;
 }
 
+const DEFAULT_SERVER_PORT = 10450;
+
 export class HttpServer {
   private readonly api: ApiServer;
   private readonly hostname: string;
@@ -19,7 +21,7 @@ export class HttpServer {
   constructor(api: ApiServer, options: HttpServerOptions = {}) {
     this.api = api;
     this.hostname = options.hostname ?? "0.0.0.0";
-    this.port = options.port ?? 1234;
+    this.port = options.port ?? DEFAULT_SERVER_PORT;
   }
 
   static async create(options: HttpServerOptions = {}): Promise<HttpServer> {
