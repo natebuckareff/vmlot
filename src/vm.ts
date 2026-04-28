@@ -1,6 +1,6 @@
 import { formatCliId, type Id } from "./id";
 
-export const DEFAULT_VM_USER = "clawthing";
+export const DEFAULT_VM_USER = "vmlot";
 
 export interface VmInfo {
   id: Id;

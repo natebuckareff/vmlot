@@ -263,7 +263,7 @@ export class ApiServer implements Api {
     },
   ): Promise<CreateVmParams> {
     const authKey = await this.tailscale.createAuthKey(
-      `clawthing VM ${input.name}`,
+      `vmlot VM ${input.name}`,
     );
 
     return {

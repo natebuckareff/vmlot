@@ -143,15 +143,15 @@ function required(flags: Map<string, string>, name: string): string {
 function usage(): string {
   return [
     `Usage:`,
-    `  clawthing server start [--data-dir ./data] [--host 0.0.0.0] [--port 1234]`,
-    `  clawthing images list [--server http://127.0.0.1:1234]`,
-    `  clawthing images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]`,
-    `  clawthing images remove --id <image-id> [--server http://127.0.0.1:1234]`,
-    `  clawthing vms list [--server http://127.0.0.1:1234]`,
-    `  clawthing vms create --name vm01 --base-image debian-13 [--user ${DEFAULT_VM_USER}] --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]`,
-    `  clawthing vms start --id <vm-id> [--server http://127.0.0.1:1234]`,
-    `  clawthing vms stop --id <vm-id> [--server http://127.0.0.1:1234]`,
-    `  clawthing vms remove --id <vm-id> [--server http://127.0.0.1:1234]`,
+    `  vmlot server start [--data-dir ./data] [--host 0.0.0.0] [--port 1234]`,
+    `  vmlot images list [--server http://127.0.0.1:1234]`,
+    `  vmlot images create --name debian-13 --url https://... [--server http://127.0.0.1:1234]`,
+    `  vmlot images remove --id <image-id> [--server http://127.0.0.1:1234]`,
+    `  vmlot vms list [--server http://127.0.0.1:1234]`,
+    `  vmlot vms create --name vm01 --base-image debian-13 [--user ${DEFAULT_VM_USER}] --ssh-public-key ~/.ssh/id_ed25519.pub [--memory 2048] [--vcpu 2] [--server http://127.0.0.1:1234]`,
+    `  vmlot vms start --id <vm-id> [--server http://127.0.0.1:1234]`,
+    `  vmlot vms stop --id <vm-id> [--server http://127.0.0.1:1234]`,
+    `  vmlot vms remove --id <vm-id> [--server http://127.0.0.1:1234]`,
   ].join("\n");
 }
 

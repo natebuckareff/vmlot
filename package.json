@@ -1,9 +1,9 @@
 {
-  "name": "clawthing",
+  "name": "vmlot",
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "bun build src/cli.ts --compile --outfile clawthing",
+    "build": "bun build src/cli.ts --compile --outfile vmlot",
     "fmt": "bun --bun prettier --write src"
   },
   "dependencies": {

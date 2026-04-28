@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "clawthing",
+      "name": "vmlot",
       "dependencies": {
         "pretty-bytes": "^7.1.0",
         "pretty-ms": "^9.3.0",
