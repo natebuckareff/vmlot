@@ -126,7 +126,7 @@ main() {
   echo "The service has not been started yet."
   echo "Create ${CONFIG_DIR}/config.json then run:"
   echo ""
-  echo "  systemctl enable --now vmlot.service"
+  echo "  sudo systemctl enable --now vmlot.service"
   echo ""
 }
 
