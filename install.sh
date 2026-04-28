@@ -58,6 +58,7 @@ After=network-online.target
 Type=simple
 User=vmlot
 Group=vmlot
+SupplementaryGroups=libvirt
 Environment=VMLOT_CONFIG_DIR=${CONFIG_DIR}
 StateDirectory=vmlot
 StateDirectoryMode=0755
