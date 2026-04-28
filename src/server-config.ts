@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { defaultConfigDir } from "./config-dir";
 
 export interface TailscaleConfig {
   oauthClientId: string;
@@ -26,11 +27,14 @@ interface TailscaleConfigFile {
 }
 
 export class ServerConfig {
-  constructor(private readonly dataDirPath: string) {}
+  constructor(private readonly path = defaultServerConfigPath()) {}
+
+  static defaultPath(): string {
+    return defaultServerConfigPath();
+  }
 
   async read(): Promise<ServerConfigData> {
-    const path = join(this.dataDirPath, "config.json");
-    const file = JSON.parse(await readFile(path, "utf8")) as ServerConfigFile;
+    const file = JSON.parse(await this.readConfigFile()) as ServerConfigFile;
     const tailscale = file.tailscale;
 
     return {
@@ -52,6 +56,32 @@ export class ServerConfig {
       },
     };
   }
+
+  private async readConfigFile(): Promise<string> {
+    try {
+      return await readFile(this.path, "utf8");
+    } catch (error: unknown) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? (error as { code?: string }).code
+          : undefined;
+      if (code === "ENOENT") {
+        throw new Error(`Missing config file: ${this.path}`);
+      }
+
+      throw error;
+    }
+  }
+}
+
+export function isMissingServerConfigError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.startsWith("Missing config file: ")
+  );
+}
+
+function defaultServerConfigPath(): string {
+  return join(defaultConfigDir(), "config.json");
 }
 
 function requiredString(value: string | undefined, fieldName: string): string {

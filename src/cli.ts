@@ -9,12 +9,15 @@ import { ApiClient } from "./api-client";
 import { HttpServer } from "./http-server";
 import { formatCliId } from "./id";
 import type { ImageInfo } from "./image";
+import { ServerConfig, isMissingServerConfigError } from "./server-config";
+import { ServerDiscovery } from "./server-discovery";
 import {
   endpointUrl,
   ServerRegistry,
   type ServerRegistryEntry,
 } from "./server-registry";
 import { TablePrinter } from "./table-printer";
+import { TailscaleClient } from "./tailscale-client";
 import { DEFAULT_VM_USER, type VmInfo } from "./vm";
 
 const DEFAULT_DATA_DIR = "data";
@@ -75,7 +78,7 @@ async function main() {
   }
 
   if (resource === "servers" && action === "list") {
-    const servers = await new ServerRegistry().list();
+    const servers = await listServers();
     console.log(formatServerTable(await pingServers(servers)));
     return;
   }
@@ -218,7 +221,74 @@ async function createApi(flags: Map<string, string>): Promise<Api> {
     return new ApiClient(DEFAULT_SERVER_URL);
   }
 
-  return new ApiClient(await new ServerRegistry().resolve(server));
+  return new ApiClient(await resolveServer(server));
+}
+
+async function listServers(): Promise<ServerRegistryEntry[]> {
+  const localServers = await new ServerRegistry().list();
+  const discoveredServers = await discoverServers();
+  return mergeServers(localServers, discoveredServers);
+}
+
+async function resolveServer(server: string): Promise<string> {
+  try {
+    return await new ServerRegistry().resolve(server);
+  } catch (error: unknown) {
+    if (!isUnknownServerError(error)) {
+      throw error;
+    }
+  }
+
+  const discoveredServers = await discoverServers();
+  const discoveredServer = discoveredServers.find(
+    (entry) => entry.name === server,
+  );
+  if (!discoveredServer) {
+    throw new Error(`Unknown server: ${server}`);
+  }
+
+  return endpointUrl(discoveredServer.endpoint);
+}
+
+async function discoverServers(): Promise<ServerRegistryEntry[]> {
+  const discovery = await createServerDiscovery();
+  return discovery ? await discovery.list() : [];
+}
+
+async function createServerDiscovery(): Promise<ServerDiscovery | undefined> {
+  let config;
+  try {
+    config = await new ServerConfig().read();
+  } catch (error: unknown) {
+    if (isMissingServerConfigError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+
+  return new ServerDiscovery(TailscaleClient.fromConfig(config.tailscale));
+}
+
+function mergeServers(
+  localServers: ServerRegistryEntry[],
+  discoveredServers: ServerRegistryEntry[],
+): ServerRegistryEntry[] {
+  const servers = new Map<string, ServerRegistryEntry>();
+  for (const server of discoveredServers) {
+    servers.set(server.name, server);
+  }
+  for (const server of localServers) {
+    servers.set(server.name, server);
+  }
+
+  return [...servers.values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
+function isUnknownServerError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("Unknown server: ");
 }
 
 async function pingServers(

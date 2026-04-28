@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { defaultConfigDir } from "./config-dir";
 
 export interface ServerEndpoint {
   host: string;
@@ -18,7 +18,7 @@ export interface ServerRegistryEntry {
   endpoint: ServerEndpoint;
 }
 
-const DEFAULT_SERVER_PORT = 10450;
+export const DEFAULT_SERVER_PORT = 10450;
 const DEFAULT_LOCAL_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
 const SERVER_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
@@ -107,9 +107,7 @@ export class ServerRegistry {
 }
 
 function defaultServerRegistryPath(): string {
-  const configDir =
-    process.env.VMLOT_CONFIG_DIR ?? join(homedir(), ".config", "vmlot");
-  return join(configDir, "servers.json");
+  return join(defaultConfigDir(), "servers.json");
 }
 
 function validateServerName(name: string): void {

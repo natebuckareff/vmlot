@@ -39,6 +39,7 @@ export interface TailscaleDevice {
   name?: string;
   hostname?: string;
   addresses?: string[];
+  tags?: string[];
 }
 
 interface TailscaleDevicesResponse {
@@ -114,15 +115,16 @@ export class TailscaleClient {
 
   async listDevices(): Promise<TailscaleDevice[]> {
     const accessToken = await this.getAccessToken("devices:core:read");
-    const response = await this.httpClient.fetch(
+    const url = new URL(
       `https://api.tailscale.com/api/v2/tailnet/${this.tailnet}/devices`,
-      {
-        requestKey: LIST_DEVICES_REQUEST_KEY,
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
     );
+    url.searchParams.set("fields", "all");
+    const response = await this.httpClient.fetch(url, {
+      requestKey: LIST_DEVICES_REQUEST_KEY,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
 
     if (!response.ok) {
       throw new Error(

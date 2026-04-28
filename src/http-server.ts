@@ -26,7 +26,7 @@ export class HttpServer {
 
   static async create(options: HttpServerOptions = {}): Promise<HttpServer> {
     const dataDir = resolve(options.dataDir ?? "data");
-    const serverConfig = new ServerConfig(dataDir);
+    const serverConfig = new ServerConfig();
     const config = await serverConfig.read();
     const tailscale = TailscaleClient.fromConfig(config.tailscale);
     const api = new ApiServer({
