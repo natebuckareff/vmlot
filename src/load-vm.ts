@@ -42,6 +42,7 @@ export class LoadVm {
           diskUsageBytes,
           memory: metadata.memory,
           vcpu: metadata.vcpu,
+          user: metadata.user,
           error: `Libvirt domain not found: ${metadata.name}`,
         };
       }
@@ -56,6 +57,7 @@ export class LoadVm {
         diskUsageBytes,
         memory: metadata.memory,
         vcpu: metadata.vcpu,
+        user: metadata.user,
         address: await this.resolveAddress(metadata, domainState.vmStatus),
       };
     }
@@ -76,6 +78,7 @@ export class LoadVm {
         diskUsageBytes,
         memory: request.memory,
         vcpu: request.vcpu,
+        user: request.user,
       };
     }
 

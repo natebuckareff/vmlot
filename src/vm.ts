@@ -12,6 +12,7 @@ export interface VmInfo {
   diskUsageBytes?: number;
   memory: number;
   vcpu: number;
+  user?: string;
   address?: string;
   error?: string;
 }

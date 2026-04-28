@@ -70,7 +70,18 @@ async function main() {
     return;
   }
 
+  if (resource === "ssh") {
+    await sshIntoVm(args);
+    return;
+  }
+
   const [action, ...rest] = args;
+
+  if (resource === "vms" && action === "ssh") {
+    await sshIntoVm(rest);
+    return;
+  }
+
   const flags = parseFlags(rest);
 
   if (flags.has("--data-dir")) {
@@ -192,7 +203,89 @@ function usage(): string {
     `  vmlot vms start --id <vm-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
     `  vmlot vms stop --id <vm-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
     `  vmlot vms remove --id <vm-id> [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}]`,
+    `  vmlot vms ssh <vm-name-or-id> [--user ${DEFAULT_VM_USER}] [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}] [-- <ssh-options>...]`,
+    `  vmlot ssh <vm-name-or-id> [--user ${DEFAULT_VM_USER}] [--server <tailnet-hostname>|${DEFAULT_SERVER_URL}] [-- <ssh-options>...]`,
   ].join("\n");
+}
+
+async function sshIntoVm(args: string[]): Promise<void> {
+  const delimiterIndex = args.indexOf("--");
+  const cliArgs = delimiterIndex === -1 ? args : args.slice(0, delimiterIndex);
+  const sshArgs = delimiterIndex === -1 ? [] : args.slice(delimiterIndex + 1);
+  const { values, positionals } = parseArgs({
+    args: cliArgs,
+    options: {
+      server: { type: "string" },
+      user: { type: "string" },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  if (positionals.length !== 1) {
+    throw new Error(`Expected one VM name or ID\n\n${usage()}`);
+  }
+
+  const flags = new Map<string, string>();
+  if (typeof values.server === "string") {
+    flags.set("--server", values.server);
+  }
+
+  const api = await createApi(flags);
+  const vm = resolveVm(positionals[0] ?? "", await api.listVms());
+
+  if (vm.status !== "running") {
+    throw new Error(`VM is not running: ${vm.name} (${vm.status})`);
+  }
+
+  if (!vm.address) {
+    throw new Error(`VM does not have a Tailscale address yet: ${vm.name}`);
+  }
+
+  const user =
+    typeof values.user === "string" ? values.user : (vm.user ?? DEFAULT_VM_USER);
+  const child = Bun.spawn(
+    [
+      "ssh",
+      "-o",
+      "StrictHostKeyChecking=no",
+      "-o",
+      "UserKnownHostsFile=/dev/null",
+      "-o",
+      "GlobalKnownHostsFile=/dev/null",
+      "-o",
+      "CheckHostIP=no",
+      "-o",
+      "LogLevel=ERROR",
+      ...sshArgs,
+      `${user}@${vm.address}`,
+    ],
+    {
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
+  const exitCode = await child.exited;
+  process.exit(exitCode);
+}
+
+function resolveVm(value: string, vms: VmInfo[]): VmInfo {
+  const nameMatch = vms.find((vm) => vm.name === value);
+  if (nameMatch) {
+    return nameMatch;
+  }
+
+  const idMatches = vms.filter((vm) => vm.id.startsWith(value));
+  if (idMatches.length === 1) {
+    return idMatches[0]!;
+  }
+
+  if (idMatches.length > 1) {
+    throw new Error(`Ambiguous VM ID prefix: ${value}`);
+  }
+
+  throw new Error(`VM not found: ${value}`);
 }
 
 async function createApi(flags: Map<string, string>): Promise<Api> {

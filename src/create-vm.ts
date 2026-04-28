@@ -64,6 +64,7 @@ export class CreateVm {
       diskUsageBytes: await this.dataDir.getVmDiskUsage(this.id),
       memory: this.params.memory,
       vcpu: this.params.vcpu,
+      user: this.params.user,
       error: this.error,
     };
   }
