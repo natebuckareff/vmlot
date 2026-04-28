@@ -13,8 +13,16 @@ interface ApiFailure {
   };
 }
 
+interface ApiClientOptions {
+  signal?: AbortSignal;
+}
+
 export class ApiClient implements Api {
   constructor(private readonly baseUrl: string) {}
+
+  async ping(options: ApiClientOptions = {}): Promise<void> {
+    return this.post<void>("/api/ping", {}, options);
+  }
 
   async listVms(): Promise<VmInfo[]> {
     return this.post<VmInfo[]>("/api/list-vms", {});
@@ -48,7 +56,11 @@ export class ApiClient implements Api {
     return this.post<void>("/api/remove-image", { id });
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  private async post<T>(
+    path: string,
+    body: unknown,
+    options: ApiClientOptions = {},
+  ): Promise<T> {
     const response = await fetch(
       new URL(path, normalizedBaseUrl(this.baseUrl)),
       {
@@ -57,6 +69,7 @@ export class ApiClient implements Api {
           "content-type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: options.signal,
       },
     );
 

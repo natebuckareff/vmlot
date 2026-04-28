@@ -3,6 +3,7 @@ import type { ImageInfo } from "./image";
 import type { CreateImageParams } from "./create-image";
 
 export interface Api {
+  ping(): Promise<void>;
   listVms(): Promise<VmInfo[]>;
   listImages(): Promise<ImageInfo[]>;
   createVm(params: CreateVmInput): Promise<VmInfo>;

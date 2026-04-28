@@ -9,15 +9,30 @@ import { ApiClient } from "./api-client";
 import { HttpServer } from "./http-server";
 import { formatCliId } from "./id";
 import type { ImageInfo } from "./image";
-import { ServerRegistry, type ServerRegistryEntry } from "./server-registry";
+import {
+  endpointUrl,
+  ServerRegistry,
+  type ServerRegistryEntry,
+} from "./server-registry";
 import { TablePrinter } from "./table-printer";
 import { DEFAULT_VM_USER, type VmInfo } from "./vm";
 
 const DEFAULT_DATA_DIR = "data";
 const DEFAULT_SERVER_PORT = 10450;
 const DEFAULT_SERVER_URL = `http://127.0.0.1:${DEFAULT_SERVER_PORT}`;
+const DEFAULT_SERVER_HOST = "127.0.0.1";
 const DEFAULT_VM_MEMORY = 2048;
 const DEFAULT_VM_VCPU = 2;
+const SERVER_PING_TIMEOUT_MS = 2000;
+
+type ServerPing =
+  | { status: "ok"; durationMs: number }
+  | { status: "timeout" }
+  | { status: "offline" };
+
+interface ServerRegistryEntryWithPing extends ServerRegistryEntry {
+  ping: ServerPing;
+}
 
 type StringFlagOptions = Record<string, { type: "string" }>;
 
@@ -61,7 +76,7 @@ async function main() {
 
   if (resource === "servers" && action === "list") {
     const servers = await new ServerRegistry().list();
-    console.log(formatServerTable(servers));
+    console.log(formatServerTable(await pingServers(servers)));
     return;
   }
 
@@ -206,16 +221,100 @@ async function createApi(flags: Map<string, string>): Promise<Api> {
   return new ApiClient(await new ServerRegistry().resolve(server));
 }
 
-function formatServerTable(servers: ServerRegistryEntry[]): string {
-  const table = new TablePrinter(["NAME", "HOST", "PORT"], {
+async function pingServers(
+  servers: ServerRegistryEntry[],
+): Promise<ServerRegistryEntryWithPing[]> {
+  const localServer: ServerRegistryEntry = {
+    name: "",
+    endpoint: {
+      host: DEFAULT_SERVER_HOST,
+      port: DEFAULT_SERVER_PORT,
+    },
+  };
+  const serversWithPing = await Promise.all(
+    servers.map(async (server) => ({
+      ...server,
+      ping: await pingServer(server),
+    })),
+  );
+
+  return [
+    { ...localServer, ping: await pingServer(localServer) },
+    ...serversWithPing.sort(compareServerPing),
+  ];
+}
+
+async function pingServer(server: ServerRegistryEntry): Promise<ServerPing> {
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeout = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, SERVER_PING_TIMEOUT_MS);
+  const startedAt = performance.now();
+
+  try {
+    await new ApiClient(endpointUrl(server.endpoint)).ping({
+      signal: controller.signal,
+    });
+    return {
+      status: "ok",
+      durationMs: Math.round(performance.now() - startedAt),
+    };
+  } catch {
+    return didTimeout ? { status: "timeout" } : { status: "offline" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function formatServerTable(servers: ServerRegistryEntryWithPing[]): string {
+  const table = new TablePrinter(["NAME", "HOST", "PORT", "PING"], {
     columnSpacing: 3,
   });
 
   for (const server of servers) {
-    table.addRow([server.name, server.endpoint.host, server.endpoint.port]);
+    table.addRow([
+      server.name,
+      server.endpoint.host,
+      server.endpoint.port,
+      formatServerPing(server.ping),
+    ]);
   }
 
   return table.render();
+}
+
+function formatServerPing(ping: ServerPing): string {
+  if (ping.status === "ok") {
+    return `${ping.durationMs}ms`;
+  }
+
+  if (ping.status === "timeout") {
+    return "-";
+  }
+
+  return "OFFLINE";
+}
+
+function compareServerPing(
+  left: ServerRegistryEntryWithPing,
+  right: ServerRegistryEntryWithPing,
+): number {
+  const result = pingSortValue(left.ping) - pingSortValue(right.ping);
+  return result === 0 ? left.name.localeCompare(right.name) : result;
+}
+
+function pingSortValue(ping: ServerPing): number {
+  if (ping.status === "ok") {
+    return ping.durationMs;
+  }
+
+  if (ping.status === "timeout") {
+    return Number.POSITIVE_INFINITY - 1;
+  }
+
+  return Number.POSITIVE_INFINITY;
 }
 
 function formatImageTable(images: ImageInfo[]): string {

@@ -36,6 +36,8 @@ export class ApiServer implements Api {
     this.images = new IdMap("Image");
   }
 
+  async ping(): Promise<void> {}
+
   async initialize(): Promise<void> {
     if (this.isInitializing) {
       return;

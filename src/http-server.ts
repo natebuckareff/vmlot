@@ -62,6 +62,10 @@ export class HttpServer {
       const pathname = new URL(request.url).pathname;
       const body = await this.parseRequestBody(request);
 
+      if (pathname === "/api/ping") {
+        return jsonResponse(200, { data: null });
+      }
+
       if (pathname === "/api/list-vms") {
         return jsonResponse(200, { data: await this.api.listVms() });
       }

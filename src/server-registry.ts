@@ -138,7 +138,7 @@ function validateEndpoint(endpoint: ServerEndpoint): void {
   }
 }
 
-function endpointUrl(endpoint: ServerEndpoint): string {
+export function endpointUrl(endpoint: ServerEndpoint): string {
   const host =
     endpoint.host.includes(":") && !endpoint.host.startsWith("[")
       ? `[${endpoint.host}]`
